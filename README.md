@@ -1,2 +1,3 @@
-# libra
-Libra Node Implementation
+# Libra
+
+Payments infrastructure for Web 3
