@@ -14,7 +14,11 @@ mod benchmarking;
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::{
-		dispatch::DispatchResult, pallet_prelude::*, sp_runtime::traits::Hash, sp_std::vec::Vec,
+		dispatch::DispatchResult,
+		pallet_prelude::*,
+		sp_runtime::traits::Hash,
+		sp_std::vec::Vec,
+		traits::{Currency, ReservableCurrency},
 	};
 	use frame_system::pallet_prelude::*;
 	use scale_info::TypeInfo;
@@ -22,9 +26,14 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+		type Currency: ReservableCurrency<Self::AccountId>;
+		#[pallet::constant]
+		type BondingAmount: Get<BalanceOf<Self>>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
+	type BalanceOf<T> =
+		<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 	type CurrencyIdOf<T> = <T as frame_system::Config>::Hash;
 
 	#[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo)]
@@ -48,24 +57,38 @@ pub mod pallet {
 	#[pallet::storage]
 	#[pallet::getter(fn accepted_currencies)]
 	pub(super) type AcceptedCurrencies<T: Config> =
-		StorageMap<_, Twox64Concat, T::AccountId, Vec<CurrencyIdOf<T>>>;
+		StorageMap<_, Twox64Concat, T::AccountId, Vec<CurrencyIdOf<T>>, ValueQuery>;
 
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		CurrencyCreated(CurrencyIdOf<T>),
-		CurrencyAccepted(CurrencyIdOf<T>),
+		CurrencyCreated {
+			currency_id: CurrencyIdOf<T>,
+			created_by: AccountOf<T>,
+		},
+		CurrencyRemoved {
+			currency_id: CurrencyIdOf<T>,
+			name: Vec<u8>,
+			symbol: Vec<u8>,
+			decimals: u8,
+			removed_by: AccountOf<T>,
+		},
+		CurrencyAccepted {
+			currency_id: CurrencyIdOf<T>,
+			accepted_by: AccountOf<T>,
+		},
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
 		CurrencyExisted,
 		CurrencyNotFound,
+		NotCurrencyIssuer,
 	}
 
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		#[pallet::weight(1_000)]
+		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
 		pub fn create_currency(
 			origin: OriginFor<T>,
 			name: Vec<u8>,
@@ -74,28 +97,59 @@ pub mod pallet {
 		) -> DispatchResult {
 			let issuer = ensure_signed(origin)?;
 
-			let currency_metadata = CurrencyMetadata::<T> { name, symbol, decimals, issuer };
+			let metadata = CurrencyMetadata::<T> { name, symbol, decimals, issuer: issuer.clone() };
 
-			let currency_id = T::Hashing::hash_of(&currency_metadata);
+			let currency_id = T::Hashing::hash_of(&metadata);
 
-			ensure!(!<Currencies<T>>::contains_key(currency_id), <Error<T>>::CurrencyExisted,);
+			ensure!(!<Currencies<T>>::contains_key(currency_id), <Error<T>>::CurrencyExisted);
 
-			<Currencies<T>>::insert(&currency_id, currency_metadata);
+			<Currencies<T>>::insert(&currency_id, metadata);
+			T::Currency::reserve(&issuer, T::BondingAmount::get())?;
 
-			Self::deposit_event(Event::CurrencyCreated(currency_id));
+			Self::deposit_event(Event::CurrencyCreated { currency_id, created_by: issuer });
+
 			Ok(())
 		}
 
-		#[pallet::weight(1_000)]
+		#[pallet::weight(10_000)]
+		pub fn remove_currency(
+			origin: OriginFor<T>,
+			currency_id: CurrencyIdOf<T>,
+		) -> DispatchResult {
+			let who = ensure_signed(origin)?;
+			let metadata = Self::currencies(&currency_id).ok_or(<Error<T>>::CurrencyNotFound)?;
+
+			ensure!(who == metadata.issuer, <Error<T>>::NotCurrencyIssuer);
+
+			<Currencies<T>>::remove(&currency_id);
+			T::Currency::unreserve(&who, T::BondingAmount::get());
+
+			Self::deposit_event(Event::CurrencyRemoved {
+				currency_id,
+				name: metadata.name,
+				symbol: metadata.symbol,
+				decimals: metadata.decimals,
+				removed_by: who,
+			});
+
+			Ok(())
+		}
+
+		#[pallet::weight(1_000 + T::DbWeight::get().writes(1))]
 		pub fn accept_currency(
 			origin: OriginFor<T>,
 			currency_id: CurrencyIdOf<T>,
 		) -> DispatchResult {
 			let merchant = ensure_signed(origin)?;
 
-			Self::currencies(&currency_id).ok_or(<Error<T>>::CurrencyNotFound)?;
+			ensure!(<Currencies<T>>::contains_key(currency_id), <Error<T>>::CurrencyNotFound);
 
-			Self::deposit_event(Event::CurrencyAccepted(currency_id));
+			<AcceptedCurrencies<T>>::mutate(&merchant, |currency_ids| {
+				currency_ids.push(currency_id.clone())
+			});
+
+			Self::deposit_event(Event::CurrencyAccepted { currency_id, accepted_by: merchant });
+
 			Ok(())
 		}
 	}
