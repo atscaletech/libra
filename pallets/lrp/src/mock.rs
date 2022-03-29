@@ -1,33 +1,50 @@
-use crate as pallet_template;
-use frame_support::parameter_types;
+#![cfg(test)]
+
+use crate as pallet_lrp;
+
+use frame_support::{construct_runtime, parameter_types, traits::{Nothing, GenesisBuild}};
 use frame_system as system;
+use orml_currencies::BasicCurrencyAdapter;
+use orml_traits::parameter_type_with_key;
+pub use pallet_balances::Call as BalancesCall;
+use pallet_timestamp::{self as timestamp};
 use sp_core::H256;
-use sp_runtime::{
-	testing::Header,
-	traits::{BlakeTwo256, IdentityLookup},
-};
+use sp_runtime::{ generic, traits::{ BlakeTwo256, IdentityLookup}, RuntimeDebug };
 
-type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Test>;
-type Block = frame_system::mocking::MockBlock<Test>;
+use codec::{Decode, Encode, MaxEncodedLen};
+use scale_info::TypeInfo;
 
-// Configure a mock runtime to test the pallet.
-frame_support::construct_runtime!(
-	pub enum Test where
-		Block = Block,
-		NodeBlock = Block,
-		UncheckedExtrinsic = UncheckedExtrinsic,
-	{
-		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
-		TemplateModule: pallet_template::{Pallet, Call, Storage, Event<T>},
-	}
-);
+#[cfg(feature = "std")]
+use serde::{Deserialize, Serialize};
+
+#[derive(Encode, Decode, Eq, PartialEq, Copy, Clone, PartialOrd, TypeInfo, Ord, MaxEncodedLen, RuntimeDebug)]
+#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
+pub enum CurrencyId {
+	Native,
+	NonNative,
+}
+
+pub type BlockNumber = u64;
+pub type AccountId = u128;
+pub type Amount = i128;
+pub type Balance = u128;
+pub type Moment = u64;
+pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
+
+pub const ALICE: AccountId = 1;
+pub const BOB: AccountId = 2;
+pub const CHARLIE: AccountId = 3;
+
+pub const PENDING_PAYMENT_WAITING_TIME: Moment = 172800000;
+pub const FULL_FILLED_WAITING_TIME: Moment = 2592000000;
+
 
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
 	pub const SS58Prefix: u8 = 42;
 }
 
-impl system::Config for Test {
+impl frame_system::Config for Runtime {
 	type BaseCallFilter = frame_support::traits::Everything;
 	type BlockWeights = ();
 	type BlockLength = ();
@@ -35,29 +52,150 @@ impl system::Config for Test {
 	type Origin = Origin;
 	type Call = Call;
 	type Index = u64;
-	type BlockNumber = u64;
+	type BlockNumber = BlockNumber;
 	type Hash = H256;
 	type Hashing = BlakeTwo256;
-	type AccountId = u64;
+	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
 	type Header = Header;
 	type Event = Event;
 	type BlockHashCount = BlockHashCount;
 	type Version = ();
 	type PalletInfo = PalletInfo;
-	type AccountData = ();
+	type AccountData = pallet_balances::AccountData<Balance>;
 	type OnNewAccount = ();
 	type OnKilledAccount = ();
 	type SystemWeightInfo = ();
 	type SS58Prefix = SS58Prefix;
 	type OnSetCode = ();
+	type MaxConsumers = frame_support::traits::ConstU32<16>;
 }
 
-impl pallet_template::Config for Test {
+parameter_types! {
+	pub const ExistentialDeposit: u128 = 500;
+	pub const MaxLocks: u32 = 50;
+}
+
+impl pallet_balances::Config for Runtime {
+	type MaxLocks = MaxLocks;
+	type MaxReserves = ();
+	type ReserveIdentifier = [u8; 8];
+	type Balance = Balance;
 	type Event = Event;
+	type DustRemoval = ();
+	type ExistentialDeposit = ExistentialDeposit;
+	type AccountStore = frame_system::Pallet<Runtime>;
+	type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
 }
 
-// Build genesis storage according to the mock runtime.
-pub fn new_test_ext() -> sp_io::TestExternalities {
-	system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
+parameter_types! {
+	pub const MinimumPeriod: Moment = 1000;
+}
+
+impl timestamp::Config for Runtime {
+	type Moment = u64;
+	type OnTimestampSet = ();
+	type MinimumPeriod = MinimumPeriod;
+	type WeightInfo = ();
+}
+
+parameter_type_with_key! {
+	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
+		Default::default()
+	};
+}
+
+impl orml_tokens::Config for Runtime {
+	type Event = Event;
+	type Balance = Balance;
+	type Amount = Amount;
+	type CurrencyId = CurrencyId;
+	type WeightInfo = ();
+	type ExistentialDeposits = ExistentialDeposits;
+	type OnDust = ();
+	type MaxLocks = MaxLocks;
+	type DustRemovalWhitelist = Nothing;
+}
+
+parameter_types! {
+	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
+}
+
+impl orml_currencies::Config for Runtime {
+	type Event = Event;
+	type MultiCurrency = Tokens;
+	type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances, Amount, BlockNumber>;
+	type GetNativeCurrencyId = GetNativeCurrencyId;
+	type WeightInfo = ();
+}
+
+parameter_types! {
+	pub const PendingPaymentWaitingTime: Moment = PENDING_PAYMENT_WAITING_TIME;
+	pub const FullFilledPaymentWaitingTime: Moment = FULL_FILLED_WAITING_TIME;
+}
+
+impl pallet_lrp::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type PendingPaymentWaitingTime = PendingPaymentWaitingTime;
+	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
+}
+
+type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
+type Block = frame_system::mocking::MockBlock<Runtime>;
+
+construct_runtime!(
+	pub enum Runtime where
+		Block = Block,
+		NodeBlock = Block,
+		UncheckedExtrinsic = UncheckedExtrinsic,
+	{
+		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
+		Timestamp: timestamp::{Pallet, Call, Storage, Inherent},
+		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
+		Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
+		Currencies: orml_currencies::{Pallet, Call, Event<T>},
+		LRP: pallet_lrp::{Pallet, Call, Storage, Event<T>},
+	}
+);
+
+pub struct ExtBuilder {
+	balances: Vec<(AccountId, CurrencyId, Balance)>,
+}
+
+impl Default for ExtBuilder {
+	fn default() -> Self {
+		Self {
+			balances: vec![
+				(ALICE, CurrencyId::Native, 1_000),
+				(ALICE, CurrencyId::NonNative, 1_000),
+				(BOB, CurrencyId::Native, 1_000),
+				(BOB, CurrencyId::NonNative, 1_000),
+			],
+		}
+	}
+}
+
+impl ExtBuilder {
+	pub fn build(self) -> sp_io::TestExternalities {
+		let mut t = system::GenesisConfig::default().build_storage::<Runtime>().unwrap();
+
+		pallet_balances::GenesisConfig::<Runtime> {
+			balances: vec![(ALICE, 1_000), (BOB, 1_000)],
+		}
+		.assimilate_storage(&mut t)
+		.unwrap();
+
+		orml_tokens::GenesisConfig::<Runtime> {
+			balances: self.balances,
+		}
+		.assimilate_storage(&mut t)
+		.unwrap();
+
+		t.into()
+	}
+}
+
+pub fn last_event() -> Event {
+	system::Pallet::<Runtime>::events().pop().expect("Event expected").event
 }
