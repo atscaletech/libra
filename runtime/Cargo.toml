@@ -48,6 +48,7 @@ pallet-transaction-payment-rpc-runtime-api = { default-features = false, git = "
 orml-currencies = { path = "../open-runtime-module-library/currencies", default-features = false }
 orml-tokens = { path = "../open-runtime-module-library/tokens", default-features = false }
 orml-traits = { path = "../open-runtime-module-library/traits", default-features = false }
+primitives = { path = "../primitives", default-features = false }
 
 # Custom pallet
 pallet-lrp = { default-features = false, path = "../pallets/lrp" }
@@ -72,6 +73,7 @@ std = [
 	"frame-support/std",
 	"frame-system-rpc-runtime-api/std",
 	"frame-system/std",
+	"primitives/std",
 	"pallet-aura/std",
 	"pallet-balances/std",
 	"pallet-grandpa/std",
