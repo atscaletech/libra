@@ -14,18 +14,10 @@ mod benchmarking;
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::{
-		dispatch::DispatchResult,
-		pallet_prelude::*,
-		sp_runtime::traits::Hash,
-		sp_std::{if_std, vec::Vec},
-		transactional,
+		dispatch::DispatchResult, pallet_prelude::*, sp_runtime::traits::Hash, sp_std::vec::Vec,
 	};
 	use frame_system::pallet_prelude::*;
 	use scale_info::TypeInfo;
-	use sp_core::H256;
-
-	#[cfg(feature = "std")]
-	use serde::{Deserialize, Serialize};
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
@@ -68,7 +60,7 @@ pub mod pallet {
 	#[pallet::error]
 	pub enum Error<T> {
 		CurrencyExisted,
-		CurrencyNotExist,
+		CurrencyNotFound,
 	}
 
 	#[pallet::call]
@@ -101,7 +93,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			let merchant = ensure_signed(origin)?;
 
-			Self::currencies(&currency_id).ok_or(<Error<T>>::CurrencyNotExist)?;
+			Self::currencies(&currency_id).ok_or(<Error<T>>::CurrencyNotFound)?;
 
 			Self::deposit_event(Event::CurrencyAccepted(currency_id));
 			Ok(())

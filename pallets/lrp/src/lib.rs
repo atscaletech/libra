@@ -15,13 +15,13 @@ mod benchmarking;
 pub mod pallet {
 	use frame_support::{
 		dispatch::DispatchResult, log, pallet_prelude::*, sp_runtime::traits::Hash,
-		sp_std::vec::Vec, traits::LockIdentifier,
+		sp_std::vec::Vec,
 	};
 	use frame_system::pallet_prelude::*;
-	use orml_traits::{MultiCurrency, MultiLockableCurrency};
-	use orml_utilities::OffchainErr;
+	use orml_traits::{MultiCurrency, MultiReservableCurrency};
 	use pallet_timestamp::{self as timestamp};
 	use scale_info::TypeInfo;
+	use sp_io::offchain_index;
 
 	#[cfg(feature = "std")]
 	use serde::{Deserialize, Serialize};
@@ -29,7 +29,11 @@ pub mod pallet {
 	#[pallet::config]
 	pub trait Config: frame_system::Config + timestamp::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
-		type Currency: MultiLockableCurrency<Self::AccountId>;
+		type Currency: MultiReservableCurrency<Self::AccountId>;
+		#[pallet::constant]
+		type PendingPaymentWaitingTime: Get<MomentOf<Self>>;
+		#[pallet::constant]
+		type FullFilledPaymentWaitingTime: Get<MomentOf<Self>>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
@@ -68,6 +72,7 @@ pub mod pallet {
 		pub receipt_hash: T::Hash,
 		pub created_at: MomentOf<T>,
 		pub updated_at: MomentOf<T>,
+		pub updated_by: AccountOf<T>,
 	}
 
 	#[pallet::pallet]
@@ -75,24 +80,84 @@ pub mod pallet {
 	pub struct Pallet<T>(_);
 
 	#[pallet::storage]
-	#[pallet::getter(fn latest_payment_id)]
 	pub(super) type LatestPaymentId<T: Config> = StorageValue<_, u128, ValueQuery>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn payments)]
 	pub(super) type Payments<T: Config> = StorageMap<_, Twox64Concat, PaymentHashOf<T>, Payment<T>>;
 
+	#[pallet::storage]
+	pub(super) type PendingPaymentHashes<T: Config> =
+		StorageValue<_, Vec<PaymentHashOf<T>>, ValueQuery>;
+
+	#[pallet::storage]
+	pub(super) type FullFilledPaymentHashes<T: Config> =
+		StorageValue<_, Vec<PaymentHashOf<T>>, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn payments_owned)]
+	pub(super) type PaymentsOwned<T: Config> =
+		StorageMap<_, Twox64Concat, AccountOf<T>, Vec<PaymentHashOf<T>>, ValueQuery>;
+
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		PaymentCreated(PaymentHashOf<T>),
-		PaymentAccepted(PaymentHashOf<T>),
-		PaymentRejected(PaymentHashOf<T>),
-		PaymentExpired(PaymentHashOf<T>),
-		PaymentFullFilled(PaymentHashOf<T>),
-		PaymentCancelled(PaymentHashOf<T>),
-		PaymentDisputed(PaymentHashOf<T>),
-		PaymentCompleted(PaymentHashOf<T>),
+		PaymentCreated {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentAccepted {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentRejected {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentExpired {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentFullFilled {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentCancelled {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentDisputed {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
+		PaymentCompleted {
+			payment_hash: PaymentHashOf<T>,
+			payer: AccountOf<T>,
+			payee: AccountOf<T>,
+			currency_id: CurrencyIdOf<T>,
+			amount: BalanceOf<T>,
+		},
 	}
 
 	// Errors inform users that something went wrong.
@@ -103,10 +168,7 @@ pub mod pallet {
 		PaymentNotFound,
 		AccessDenied,
 		InvalidStatusChange,
-		PaymentUpdateFailed,
-		TransferCurrencyFailed,
-		RemoveLockFailed,
-		ExtendLockFailed,
+		PaymentNonexpired,
 	}
 
 	#[pallet::hooks]
@@ -129,10 +191,6 @@ pub mod pallet {
 		}
 	}
 
-	pub const PAYMENT_LOCK_ID: LockIdentifier = *b"paidlock";
-	pub const MAX_PENDING_TIME: u32 = 172800000;
-	pub const MAX_FULL_FILL_TIME: u32 = 2592000000;
-
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
 		#[pallet::weight(1_000)]
@@ -142,10 +200,10 @@ pub mod pallet {
 			amount: BalanceOf<T>,
 			currency_id: CurrencyIdOf<T>,
 			description: Vec<u8>,
-			receipt_hash: T::Hash,
+			receipt: Vec<u8>,
 		) -> DispatchResult {
 			let payer = ensure_signed(origin)?;
-			Self::do_create_payment(payer, payee, amount, currency_id, description, receipt_hash)?;
+			Self::do_create_payment(payer, payee, amount, currency_id, description, receipt)?;
 			Ok(())
 		}
 
@@ -214,7 +272,37 @@ pub mod pallet {
 	}
 
 	impl<T: Config> Pallet<T> {
-		fn run_offchain_worker() -> Result<(), OffchainErr> {
+		fn run_offchain_worker() -> DispatchResult {
+			Self::evaluate_pending_payments()?;
+			Self::evaluate_full_filled_payments()?;
+
+			Ok(())
+		}
+
+		fn evaluate_pending_payments() -> DispatchResult {
+			let pending_payment_hashes = <PendingPaymentHashes<T>>::get();
+			if pending_payment_hashes.len() == 0 {
+				return Ok(())
+			}
+
+			for payment_hash in pending_payment_hashes.iter() {
+				Self::do_expire_payment(payment_hash.clone())?;
+			}
+
+			Ok(())
+		}
+
+		fn evaluate_full_filled_payments() -> DispatchResult {
+			let full_filled_payment_hashes = <FullFilledPaymentHashes<T>>::get();
+
+			if full_filled_payment_hashes.len() == 0 {
+				return Ok(())
+			}
+
+			for payment_hash in full_filled_payment_hashes.iter() {
+				Self::do_auto_complete_full_filled_payments(payment_hash.clone())?;
+			}
+
 			Ok(())
 		}
 
@@ -224,43 +312,60 @@ pub mod pallet {
 			amount: BalanceOf<T>,
 			currency_id: CurrencyIdOf<T>,
 			description: Vec<u8>,
-			receipt_hash: T::Hash,
+			receipt: Vec<u8>,
 		) -> DispatchResult {
-			let id = Self::latest_payment_id().checked_add(1).ok_or(<Error<T>>::Overflow)?;
+			let id = <LatestPaymentId<T>>::get().checked_add(1).ok_or(<Error<T>>::Overflow)?;
 
 			ensure!(
 				T::Currency::free_balance(currency_id.clone(), &payer) >= amount,
 				<Error<T>>::InsufficientBalance,
 			);
 
-			T::Currency::extend_lock(PAYMENT_LOCK_ID, currency_id.clone(), &payer, amount.clone())?;
+			T::Currency::reserve(currency_id.clone(), &payer, amount.clone())?;
 
 			let now = <timestamp::Pallet<T>>::get();
+			let receipt_hash = T::Hashing::hash_of(&receipt);
+
+			offchain_index::set(&receipt_hash.encode(), &receipt);
 
 			let payment = Payment::<T> {
 				id,
-				payer,
-				payee,
+				payer: payer.clone(),
+				payee: payee.clone(),
 				amount,
-				currency_id,
+				currency_id: currency_id.clone(),
 				description,
 				receipt_hash,
 				created_at: now,
 				updated_at: now,
+				updated_by: payer.clone(),
 				status: PaymentStatus::Pending,
 			};
 
 			let payment_hash = T::Hashing::hash_of(&payment);
 
 			<Payments<T>>::insert(&payment_hash, payment);
+			<PaymentsOwned<T>>::mutate(&payer, |payment_hashes| {
+				payment_hashes.push(payment_hash.clone())
+			});
 			<LatestPaymentId<T>>::put(id);
+			<PendingPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.push(payment_hash.clone())
+			});
 
-			Self::deposit_event(Event::PaymentCreated(payment_hash));
+			Self::deposit_event(Event::PaymentCreated {
+				payment_hash,
+				payer,
+				payee,
+				currency_id,
+				amount,
+			});
 
 			Ok(())
 		}
 
 		fn do_update_payment(
+			updated_by: AccountOf<T>,
 			payment_hash: PaymentHashOf<T>,
 			status: PaymentStatus,
 		) -> DispatchResult {
@@ -269,6 +374,7 @@ pub mod pallet {
 			let now = <timestamp::Pallet<T>>::get();
 
 			payment.updated_at = now;
+			payment.updated_by = updated_by;
 			payment.status = status;
 
 			<Payments<T>>::insert(&payment_hash, payment);
@@ -284,8 +390,19 @@ pub mod pallet {
 			ensure!(sender == payment.payee, <Error<T>>::AccessDenied);
 			ensure!(payment.status == PaymentStatus::Pending, <Error<T>>::InvalidStatusChange);
 
-			Self::do_update_payment(payment_hash, PaymentStatus::Accepted)?;
-			Self::deposit_event(Event::PaymentAccepted(payment_hash));
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::Accepted)?;
+
+			<PendingPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.retain(|&hash| hash != payment_hash)
+			});
+
+			Self::deposit_event(Event::PaymentAccepted {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
 
 			Ok(())
 		}
@@ -299,10 +416,61 @@ pub mod pallet {
 			ensure!(sender == payment.payee, <Error<T>>::AccessDenied);
 			ensure!(payment.status == PaymentStatus::Pending, <Error<T>>::InvalidStatusChange);
 
-			T::Currency::remove_lock(PAYMENT_LOCK_ID, payment.currency_id.clone(), &payment.payer)?;
+			T::Currency::unreserve(
+				payment.currency_id.clone(),
+				&payment.payer,
+				payment.amount.clone(),
+			);
 
-			Self::do_update_payment(payment_hash, PaymentStatus::Rejected)?;
-			Self::deposit_event(Event::PaymentRejected(payment_hash));
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::Rejected)?;
+
+			<PendingPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.retain(|&hash| hash != payment_hash)
+			});
+
+			Self::deposit_event(Event::PaymentRejected {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
+
+			Ok(())
+		}
+
+		fn do_expire_payment(payment_hash: PaymentHashOf<T>) -> DispatchResult {
+			let payment = Self::payments(&payment_hash).ok_or(<Error<T>>::PaymentNotFound)?;
+
+			ensure!(payment.status == PaymentStatus::Pending, <Error<T>>::InvalidStatusChange);
+
+			let now = <timestamp::Pallet<T>>::get();
+			let expired_time = payment.updated_at + T::PendingPaymentWaitingTime::get();
+
+			if expired_time < now {
+				return Ok(())
+			}
+
+			T::Currency::unreserve(
+				payment.currency_id.clone(),
+				&payment.payer,
+				payment.amount.clone(),
+			);
+
+			Self::do_update_payment(payment.updated_by, payment_hash, PaymentStatus::Expired)?;
+
+			<PendingPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.retain(|&hash| hash != payment_hash)
+			});
+
+			Self::deposit_event(Event::PaymentExpired {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
+
 			Ok(())
 		}
 
@@ -320,10 +488,21 @@ pub mod pallet {
 				_ => return Err(<Error<T>>::InvalidStatusChange.into()),
 			}
 
-			T::Currency::remove_lock(PAYMENT_LOCK_ID, payment.currency_id.clone(), &payment.payer)?;
+			T::Currency::unreserve(
+				payment.currency_id.clone(),
+				&payment.payer,
+				payment.amount.clone(),
+			);
 
-			Self::do_update_payment(payment_hash, PaymentStatus::Cancelled)?;
-			Self::deposit_event(Event::PaymentCancelled(payment_hash));
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::Cancelled)?;
+
+			Self::deposit_event(Event::PaymentCancelled {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
 
 			Ok(())
 		}
@@ -337,8 +516,59 @@ pub mod pallet {
 			ensure!(sender == payment.payee, <Error<T>>::AccessDenied);
 			ensure!(payment.status == PaymentStatus::Accepted, <Error<T>>::InvalidStatusChange);
 
-			Self::do_update_payment(payment_hash, PaymentStatus::FullFilled)?;
-			Self::deposit_event(Event::PaymentFullFilled(payment_hash));
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::FullFilled)?;
+
+			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.push(payment_hash.clone())
+			});
+
+			Self::deposit_event(Event::PaymentFullFilled {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
+
+			Ok(())
+		}
+
+		fn do_auto_complete_full_filled_payments(payment_hash: PaymentHashOf<T>) -> DispatchResult {
+			let payment = Self::payments(&payment_hash).ok_or(<Error<T>>::PaymentNotFound)?;
+			let now = <timestamp::Pallet<T>>::get();
+
+			let expired_time = payment.updated_at + T::FullFilledPaymentWaitingTime::get();
+
+			if expired_time < now {
+				return Ok(())
+			}
+
+			T::Currency::unreserve(
+				payment.currency_id.clone(),
+				&payment.payer,
+				payment.amount.clone(),
+			);
+
+			T::Currency::transfer(
+				payment.currency_id.clone(),
+				&payment.payer,
+				&payment.payee,
+				payment.amount.clone(),
+			)?;
+
+			Self::do_update_payment(payment.updated_by, payment_hash, PaymentStatus::Completed)?;
+
+			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.retain(|&hash| hash != payment_hash)
+			});
+
+			Self::deposit_event(Event::PaymentCompleted {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
 
 			Ok(())
 		}
@@ -361,8 +591,14 @@ pub mod pallet {
 				_ => return Err(<Error<T>>::InvalidStatusChange.into()),
 			}
 
-			Self::do_update_payment(payment_hash, PaymentStatus::Disputed)?;
-			Self::deposit_event(Event::PaymentFullFilled(payment_hash));
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::Disputed)?;
+			Self::deposit_event(Event::PaymentDisputed {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
 
 			Ok(())
 		}
@@ -372,10 +608,14 @@ pub mod pallet {
 			payment_hash: PaymentHashOf<T>,
 		) -> DispatchResult {
 			let payment = Self::payments(&payment_hash).ok_or(<Error<T>>::PaymentNotFound)?;
-			ensure!(sender == payment.payee, <Error<T>>::AccessDenied);
+			ensure!(sender == payment.payer, <Error<T>>::AccessDenied);
 			ensure!(payment.status == PaymentStatus::FullFilled, <Error<T>>::InvalidStatusChange);
 
-			T::Currency::remove_lock(PAYMENT_LOCK_ID, payment.currency_id.clone(), &payment.payer)?;
+			T::Currency::unreserve(
+				payment.currency_id.clone(),
+				&payment.payer,
+				payment.amount.clone(),
+			);
 
 			T::Currency::transfer(
 				payment.currency_id.clone(),
@@ -384,8 +624,19 @@ pub mod pallet {
 				payment.amount.clone(),
 			)?;
 
-			Self::do_update_payment(payment_hash, PaymentStatus::Completed)?;
-			Self::deposit_event(Event::PaymentCompleted(payment_hash));
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::Completed)?;
+
+			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
+				payment_hashes.retain(|&hash| hash != payment_hash)
+			});
+
+			Self::deposit_event(Event::PaymentCompleted {
+				payment_hash,
+				payer: payment.payer,
+				payee: payment.payee,
+				currency_id: payment.currency_id,
+				amount: payment.amount,
+			});
 
 			Ok(())
 		}
