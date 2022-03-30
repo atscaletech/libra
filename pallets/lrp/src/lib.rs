@@ -160,7 +160,6 @@ pub mod pallet {
 		},
 	}
 
-	// Errors inform users that something went wrong.
 	#[pallet::error]
 	pub enum Error<T> {
 		Overflow,
