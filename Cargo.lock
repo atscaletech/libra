@@ -1055,7 +1055,6 @@ dependencies = [
 name = "currencies-registry"
 version = "0.0.0"
 dependencies = [
- "frame-benchmarking",
  "frame-support",
  "frame-system",
  "pallet-balances",
@@ -3971,7 +3970,6 @@ dependencies = [
 name = "pallet-lrp"
 version = "0.0.0"
 dependencies = [
- "frame-benchmarking",
  "frame-support",
  "frame-system",
  "orml-currencies",
