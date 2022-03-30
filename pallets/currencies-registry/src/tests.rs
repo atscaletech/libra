@@ -101,7 +101,7 @@ fn remove_currency_works() {
 fn accept_currency_works() {
 	ExtBuilder.build().execute_with(|| {
 		System::set_block_number(1);
-		let (currency_id) = expected();
+		let (currency_id, _) = expected();
 
 		assert_ok!(CurrenciesRegistry::create_currency(
 			Origin::signed(ALICE),
