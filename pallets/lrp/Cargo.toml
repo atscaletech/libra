@@ -23,7 +23,6 @@ scale-info = { version = "1.0", default-features = false, features = [
 
 frame-support = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 frame-system = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
-frame-benchmarking = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16", optional = true }
 sp-io = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 orml-currencies = { path = "../../open-runtime-module-library/currencies", default-features = false }
 orml-tokens = { path = "../../open-runtime-module-library/tokens", default-features = false }
@@ -44,7 +43,6 @@ std = [
 	"serde",
 	"frame-support/std",
 	"frame-system/std",
-	"frame-benchmarking/std",
 	"pallet-timestamp/std",
 	"orml-currencies/std",
 	"orml-tokens/std",
@@ -52,5 +50,4 @@ std = [
 	"orml-utilities/std"
 ]
 
-runtime-benchmarks = ["frame-benchmarking"]
 try-runtime = ["frame-support/try-runtime"]
