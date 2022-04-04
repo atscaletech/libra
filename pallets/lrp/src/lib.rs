@@ -20,16 +20,23 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use orml_traits::{MultiCurrency, MultiReservableCurrency};
 	use pallet_timestamp::{self as timestamp};
+	use currencies_registry::CurrenciesManager;
+	use primitives::{ CurrencyId };
 	use scale_info::TypeInfo;
 	use sp_io::offchain_index;
+	use sp_runtime::RuntimeDebug;
 
 	#[cfg(feature = "std")]
-	use serde::{Deserialize, Serialize};
+	use serde::{Deserialize, Serialize}; 
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + timestamp::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
-		type Currency: MultiReservableCurrency<Self::AccountId>;
+		type Currency: MultiReservableCurrency<
+			Self::AccountId,
+			CurrencyId = CurrencyId<Self::Hash>,
+		>;
+		type CurrenciesManager: CurrenciesManager<Self::AccountId, Self::Hash>;
 		#[pallet::constant]
 		type PendingPaymentWaitingTime: Get<MomentOf<Self>>;
 		#[pallet::constant]
@@ -37,11 +44,7 @@ pub mod pallet {
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
-	type BalanceOf<T> =
-		<<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
-	type CurrencyIdOf<T> = <<T as Config>::Currency as MultiCurrency<
-		<T as frame_system::Config>::AccountId,
-	>>::CurrencyId;
+	type BalanceOf<T> = <<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
 	type PaymentHashOf<T> = <T as frame_system::Config>::Hash;
 	type MomentOf<T> = <T as pallet_timestamp::Config>::Moment;
 
@@ -66,7 +69,7 @@ pub mod pallet {
 		pub payer: AccountOf<T>,
 		pub payee: AccountOf<T>,
 		pub amount: BalanceOf<T>,
-		pub currency_id: CurrencyIdOf<T>,
+		pub currency_id: CurrencyId<T::Hash>,
 		pub description: Vec<u8>,
 		pub status: PaymentStatus,
 		pub receipt_hash: T::Hash,
@@ -106,56 +109,56 @@ pub mod pallet {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentAccepted {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentRejected {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentExpired {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentFullFilled {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentCancelled {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentDisputed {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 		PaymentCompleted {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
 	}
@@ -168,6 +171,7 @@ pub mod pallet {
 		AccessDenied,
 		InvalidStatusChange,
 		PaymentNonexpired,
+		UnacceptedCurrency,
 	}
 
 	#[pallet::hooks]
@@ -197,7 +201,7 @@ pub mod pallet {
 			origin: OriginFor<T>,
 			payee: AccountOf<T>,
 			amount: BalanceOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			description: Vec<u8>,
 			receipt: Vec<u8>,
 		) -> DispatchResult {
@@ -309,7 +313,7 @@ pub mod pallet {
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
 			amount: BalanceOf<T>,
-			currency_id: CurrencyIdOf<T>,
+			currency_id: CurrencyId<T::Hash>,
 			description: Vec<u8>,
 			receipt: Vec<u8>,
 		) -> DispatchResult {
@@ -319,6 +323,8 @@ pub mod pallet {
 				T::Currency::free_balance(currency_id.clone(), &payer) >= amount,
 				<Error<T>>::InsufficientBalance,
 			);
+
+			ensure!(T::CurrenciesManager::is_currency_accepted(&payee, &currency_id), <Error<T>>::UnacceptedCurrency);
 
 			T::Currency::reserve(currency_id.clone(), &payer, amount.clone())?;
 

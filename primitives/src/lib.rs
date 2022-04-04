@@ -10,7 +10,6 @@ use sp_std::prelude::*;
 #[cfg(feature = "std")]
 use serde::{Deserialize, Serialize};
 
-
 pub type Amount = i128;
 
 /// An index to a block.
@@ -36,7 +35,7 @@ pub type Hash = sp_core::H256;
 
 #[derive(Encode, Decode, Eq, PartialEq, Copy, Clone, RuntimeDebug, PartialOrd, TypeInfo, Ord, MaxEncodedLen)]
 #[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-pub enum CurrencyId {
+pub enum CurrencyId<H> {
 	Native,
-	Registered(Hash),
+	Registered(H),
 }

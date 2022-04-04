@@ -16,9 +16,9 @@ fn expected() -> (<Runtime as system::Config>::Hash, CurrencyMetadata<Runtime>) 
 		issuer: ALICE,
 	};
 
-	let currency_id = <Runtime as system::Config>::Hashing::hash_of(&metadata);
+	let currency_hash = <Runtime as system::Config>::Hashing::hash_of(&metadata);
 
-	(currency_id, metadata)
+	(currency_hash, metadata)
 }
 
 #[test]
@@ -26,7 +26,7 @@ fn create_currency_works() {
 	ExtBuilder.build().execute_with(|| {
 		System::set_block_number(1);
 
-		let (currency_id, metadata) = expected();
+		let (currency_hash, metadata) = expected();
 
 		assert_ok!(CurrenciesRegistry::create_currency(
 			Origin::signed(ALICE),
@@ -37,11 +37,11 @@ fn create_currency_works() {
 		assert_eq!(
 			last_event(),
 			Event::CurrenciesRegistry(crate::Event::CurrencyCreated {
-				currency_id,
+				currency_hash,
 				created_by: ALICE,
 			}),
 		);
-		assert_eq!(CurrenciesRegistry::currencies(currency_id).unwrap(), metadata);
+		assert_eq!(CurrenciesRegistry::currencies(currency_hash).unwrap(), metadata);
 
 		assert_noop!(
 			CurrenciesRegistry::create_currency(
@@ -60,7 +60,7 @@ fn remove_currency_works() {
 	ExtBuilder.build().execute_with(|| {
 		System::set_block_number(1);
 
-		let (currency_id, metadata) = expected();
+		let (currency_hash, metadata) = expected();
 
 		assert_ok!(CurrenciesRegistry::create_currency(
 			Origin::signed(ALICE),
@@ -74,15 +74,15 @@ fn remove_currency_works() {
 			Error::<Runtime>::CurrencyNotFound
 		);
 		assert_noop!(
-			CurrenciesRegistry::remove_currency(Origin::signed(BOB), currency_id,),
+			CurrenciesRegistry::remove_currency(Origin::signed(BOB), currency_hash,),
 			Error::<Runtime>::NotCurrencyIssuer
 		);
 
-		assert_ok!(CurrenciesRegistry::remove_currency(Origin::signed(ALICE), currency_id));
+		assert_ok!(CurrenciesRegistry::remove_currency(Origin::signed(ALICE), currency_hash));
 		assert_eq!(
 			last_event(),
 			Event::CurrenciesRegistry(crate::Event::CurrencyRemoved {
-				currency_id,
+				currency_hash,
 				name: metadata.name,
 				symbol: metadata.symbol,
 				decimals: 12,
@@ -91,7 +91,7 @@ fn remove_currency_works() {
 		);
 
 		assert_noop!(
-			CurrenciesRegistry::remove_currency(Origin::signed(ALICE), currency_id),
+			CurrenciesRegistry::remove_currency(Origin::signed(ALICE), currency_hash),
 			Error::<Runtime>::CurrencyNotFound
 		);
 	});
@@ -101,7 +101,7 @@ fn remove_currency_works() {
 fn accept_currency_works() {
 	ExtBuilder.build().execute_with(|| {
 		System::set_block_number(1);
-		let (currency_id, _) = expected();
+		let (currency_hash, _) = expected();
 
 		assert_ok!(CurrenciesRegistry::create_currency(
 			Origin::signed(ALICE),
@@ -113,15 +113,15 @@ fn accept_currency_works() {
 			CurrenciesRegistry::accept_currency(Origin::signed(ALICE), H256::zero()),
 			Error::<Runtime>::CurrencyNotFound
 		);
-		assert_ok!(CurrenciesRegistry::accept_currency(Origin::signed(BOB), currency_id,));
+		assert_ok!(CurrenciesRegistry::accept_currency(Origin::signed(BOB), currency_hash,));
 		assert_eq!(
 			last_event(),
 			Event::CurrenciesRegistry(crate::Event::CurrencyAccepted {
-				currency_id,
+				currency_hash,
 				accepted_by: BOB,
 			}),
 		);
 		assert_eq!(CurrenciesRegistry::accepted_currencies(BOB).len(), 1);
-		assert_eq!(CurrenciesRegistry::accepted_currencies(BOB)[0], currency_id);
+		assert_eq!(CurrenciesRegistry::accepted_currencies(BOB)[0], currency_hash);
 	});
 }
