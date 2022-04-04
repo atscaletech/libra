@@ -24,11 +24,15 @@ scale-info = { version = "1.0", default-features = false, features = [
 frame-support = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 frame-system = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 sp-core = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+orml-traits = { path = "../../open-runtime-module-library/traits", default-features = false }
+primitives = { path = "../../primitives", default-features = false }
 
 [dev-dependencies]
 sp-io = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+orml-currencies = { path = "../../open-runtime-module-library/currencies", default-features = false }
+orml-tokens = { path = "../../open-runtime-module-library/tokens", default-features = false }
 
 [features]
 default = ["std"]

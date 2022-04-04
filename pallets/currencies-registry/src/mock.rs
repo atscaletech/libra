@@ -1,18 +1,20 @@
 use crate as currencies_registry;
-use frame_support::{construct_runtime, parameter_types};
+use frame_support::{construct_runtime, parameter_types, traits::Nothing};
 use frame_system as system;
 pub use pallet_balances::Call as BalancesCall;
-use sp_core::H256;
 use sp_runtime::{
 	generic,
-	traits::{BlakeTwo256, IdentityLookup},
+	traits::{BlakeTwo256, IdentityLookup, Zero},
 };
+use orml_currencies::BasicCurrencyAdapter;
+use orml_traits::parameter_type_with_key;
+pub use primitives::{CurrencyId, Hash};
 
 pub type BlockNumber = u64;
 pub type AccountId = u128;
+pub type Amount = i128;
 pub type Balance = u128;
 pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
-pub type Hash = H256;
 
 pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
@@ -67,13 +69,43 @@ impl pallet_balances::Config for Runtime {
 	type WeightInfo = pallet_balances::weights::SubstrateWeight<Runtime>;
 }
 
+impl orml_tokens::Config for Runtime {
+	type Event = Event;
+	type Balance = Balance;
+	type Amount = Amount;
+	type CurrencyId = CurrencyId<Hash>;
+	type WeightInfo = ();
+	type ExistentialDeposits = ExistentialDeposits;
+	type OnDust = ();
+	type MaxLocks = MaxLocks;
+	type DustRemovalWhitelist = Nothing;
+}
+
+parameter_type_with_key! {
+	pub ExistentialDeposits: |_currency_id: CurrencyId<Hash>| -> Balance {
+		Zero::zero()
+	};
+}
+
+parameter_types! {
+	pub const GetNativeCurrencyId: CurrencyId<Hash> = CurrencyId::<Hash>::Native;
+}
+
+impl orml_currencies::Config for Runtime {
+	type Event = Event;
+	type MultiCurrency = Tokens;
+	type NativeCurrency = BasicCurrencyAdapter<Runtime, Balances, Amount, BlockNumber>;
+	type GetNativeCurrencyId = GetNativeCurrencyId;
+	type WeightInfo = ();
+}
+
 parameter_types! {
 	pub const BondingAmount: Balance = BONDING_AMOUNT;
 }
 
 impl currencies_registry::Config for Runtime {
 	type Event = Event;
-	type Currency = Balances;
+	type Currency = Currencies;
 	type BondingAmount = BondingAmount;
 }
 
@@ -88,6 +120,8 @@ construct_runtime!(
 	{
 		System: frame_system::{Pallet, Call, Config, Storage, Event<T>},
 		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
+		Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
+		Currencies: orml_currencies::{Pallet, Call, Event<T>},
 		CurrenciesRegistry: currencies_registry::{Pallet, Call, Storage, Event<T>},
 	}
 );

@@ -1057,8 +1057,12 @@ version = "0.0.0"
 dependencies = [
  "frame-support",
  "frame-system",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
  "pallet-balances",
  "parity-scale-codec",
+ "primitives",
  "scale-info",
  "serde",
  "sp-core",
@@ -3970,6 +3974,7 @@ dependencies = [
 name = "pallet-lrp"
 version = "0.0.0"
 dependencies = [
+ "currencies-registry",
  "frame-support",
  "frame-system",
  "orml-currencies",
@@ -3979,6 +3984,7 @@ dependencies = [
  "pallet-balances",
  "pallet-timestamp",
  "parity-scale-codec",
+ "primitives",
  "scale-info",
  "serde",
  "sp-core",
@@ -4494,6 +4500,7 @@ dependencies = [
 name = "primitives"
 version = "0.0.0"
 dependencies = [
+ "frame-system",
  "parity-scale-codec",
  "scale-info",
  "serde",

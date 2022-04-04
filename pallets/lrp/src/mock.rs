@@ -2,27 +2,20 @@
 
 use crate as pallet_lrp;
 
-use frame_support::{construct_runtime, parameter_types, traits::{Nothing, GenesisBuild}};
+use frame_support::{
+	construct_runtime, parameter_types,
+	traits::{GenesisBuild, Nothing},
+};
 use frame_system as system;
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::parameter_type_with_key;
 pub use pallet_balances::Call as BalancesCall;
 use pallet_timestamp::{self as timestamp};
-use sp_core::H256;
-use sp_runtime::{ generic, traits::{ BlakeTwo256, IdentityLookup}, RuntimeDebug };
-
-use codec::{Decode, Encode, MaxEncodedLen};
-use scale_info::TypeInfo;
-
-#[cfg(feature = "std")]
-use serde::{Deserialize, Serialize};
-
-#[derive(Encode, Decode, Eq, PartialEq, Copy, Clone, PartialOrd, TypeInfo, Ord, MaxEncodedLen, RuntimeDebug)]
-#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
-pub enum CurrencyId {
-	Native,
-	NonNative,
-}
+pub use primitives::{CurrencyId, Hash};
+use sp_runtime::{
+	generic,
+	traits::{BlakeTwo256, IdentityLookup},
+};
 
 pub type BlockNumber = u64;
 pub type AccountId = u128;
@@ -38,7 +31,6 @@ pub const CHARLIE: AccountId = 3;
 pub const PENDING_PAYMENT_WAITING_TIME: Moment = 172800000;
 pub const FULL_FILLED_WAITING_TIME: Moment = 2592000000;
 
-
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
 	pub const SS58Prefix: u8 = 42;
@@ -53,7 +45,7 @@ impl frame_system::Config for Runtime {
 	type Call = Call;
 	type Index = u64;
 	type BlockNumber = BlockNumber;
-	type Hash = H256;
+	type Hash = Hash;
 	type Hashing = BlakeTwo256;
 	type AccountId = AccountId;
 	type Lookup = IdentityLookup<Self::AccountId>;
@@ -100,7 +92,7 @@ impl timestamp::Config for Runtime {
 }
 
 parameter_type_with_key! {
-	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
+	pub ExistentialDeposits: |_currency_id: CurrencyId<Hash>| -> Balance {
 		Default::default()
 	};
 }
@@ -109,7 +101,7 @@ impl orml_tokens::Config for Runtime {
 	type Event = Event;
 	type Balance = Balance;
 	type Amount = Amount;
-	type CurrencyId = CurrencyId;
+	type CurrencyId = CurrencyId<Hash>;
 	type WeightInfo = ();
 	type ExistentialDeposits = ExistentialDeposits;
 	type OnDust = ();
@@ -118,7 +110,7 @@ impl orml_tokens::Config for Runtime {
 }
 
 parameter_types! {
-	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
+	pub const GetNativeCurrencyId: CurrencyId<Hash> = CurrencyId::<Hash>::Native;
 }
 
 impl orml_currencies::Config for Runtime {
@@ -130,6 +122,16 @@ impl orml_currencies::Config for Runtime {
 }
 
 parameter_types! {
+	pub const BondingAmount: Balance = 100_000_000_000_000;
+}
+
+impl currencies_registry::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type BondingAmount = BondingAmount;
+}
+
+parameter_types! {
 	pub const PendingPaymentWaitingTime: Moment = PENDING_PAYMENT_WAITING_TIME;
 	pub const FullFilledPaymentWaitingTime: Moment = FULL_FILLED_WAITING_TIME;
 }
@@ -137,6 +139,7 @@ parameter_types! {
 impl pallet_lrp::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
+	type CurrenciesManager = CurrenciesRegistry;
 	type PendingPaymentWaitingTime = PendingPaymentWaitingTime;
 	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
 }
@@ -155,12 +158,13 @@ construct_runtime!(
 		Balances: pallet_balances::{Pallet, Call, Storage, Config<T>, Event<T>},
 		Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
 		Currencies: orml_currencies::{Pallet, Call, Event<T>},
+		CurrenciesRegistry: currencies_registry::{Pallet, Call, Storage, Event<T>},
 		LRP: pallet_lrp::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
 pub struct ExtBuilder {
-	balances: Vec<(AccountId, CurrencyId, Balance)>,
+	balances: Vec<(AccountId, CurrencyId<Hash>, Balance)>,
 }
 
 impl Default for ExtBuilder {
@@ -168,9 +172,7 @@ impl Default for ExtBuilder {
 		Self {
 			balances: vec![
 				(ALICE, CurrencyId::Native, 1_000),
-				(ALICE, CurrencyId::NonNative, 1_000),
 				(BOB, CurrencyId::Native, 1_000),
-				(BOB, CurrencyId::NonNative, 1_000),
 			],
 		}
 	}
@@ -180,17 +182,13 @@ impl ExtBuilder {
 	pub fn build(self) -> sp_io::TestExternalities {
 		let mut t = system::GenesisConfig::default().build_storage::<Runtime>().unwrap();
 
-		pallet_balances::GenesisConfig::<Runtime> {
-			balances: vec![(ALICE, 1_000), (BOB, 1_000)],
-		}
-		.assimilate_storage(&mut t)
-		.unwrap();
+		pallet_balances::GenesisConfig::<Runtime> { balances: vec![(ALICE, 1_000), (BOB, 1_000)] }
+			.assimilate_storage(&mut t)
+			.unwrap();
 
-		orml_tokens::GenesisConfig::<Runtime> {
-			balances: self.balances,
-		}
-		.assimilate_storage(&mut t)
-		.unwrap();
+		orml_tokens::GenesisConfig::<Runtime> { balances: self.balances }
+			.assimilate_storage(&mut t)
+			.unwrap();
 
 		t.into()
 	}

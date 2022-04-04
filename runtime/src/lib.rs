@@ -36,10 +36,11 @@ pub use frame_support::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
 		IdentityFee, Weight,
 	},
-	StorageValue,
+	StorageValue, RuntimeDebug,
 };
 pub use pallet_balances::Call as BalancesCall;
 pub use pallet_lrp;
+pub use currencies_registry;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 
@@ -266,7 +267,7 @@ impl orml_tokens::Config for Runtime {
 	type Event = Event;
 	type Balance = Balance;
 	type Amount = Amount;
-	type CurrencyId = CurrencyId;
+	type CurrencyId = CurrencyId<Hash>;
 	type WeightInfo = ();
 	type ExistentialDeposits = ExistentialDeposits;
 	type OnDust = ();
@@ -275,13 +276,13 @@ impl orml_tokens::Config for Runtime {
 }
 
 parameter_type_with_key! {
-	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
+	pub ExistentialDeposits: |_currency_id: CurrencyId<Hash>| -> Balance {
 		Zero::zero()
 	};
 }
 
 parameter_types! {
-	pub const GetNativeCurrencyId: CurrencyId = CurrencyId::Native;
+	pub const GetNativeCurrencyId: CurrencyId<Hash> = CurrencyId::<Hash>::Native;
 }
 
 impl orml_currencies::Config for Runtime {
@@ -293,6 +294,16 @@ impl orml_currencies::Config for Runtime {
 }
 
 parameter_types! {
+	pub const BondingAmount: Balance = 100_000_000_000_000;
+}
+
+impl currencies_registry::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type BondingAmount = BondingAmount;
+}
+
+parameter_types! {
 	pub const PendingPaymentWaitingTime: Moment = 172800000;
 	pub const FullFilledPaymentWaitingTime: Moment = 2592000000;
 }
@@ -300,6 +311,7 @@ parameter_types! {
 impl pallet_lrp::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
+	type CurrenciesManager = CurrenciesRegistry;
 	type PendingPaymentWaitingTime = PendingPaymentWaitingTime;
 	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
 }
@@ -320,9 +332,10 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment::{Pallet, Storage},
 		Sudo: pallet_sudo::{Pallet, Call, Config<T>, Storage, Event<T>},
 
-		Currencies: orml_currencies::{Pallet, Call, Event<T>},
 		Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
-		Lrp: pallet_lrp::{Pallet, Storage, Event<T>},
+		Currencies: orml_currencies::{Pallet, Call, Event<T>},
+		CurrenciesRegistry: currencies_registry::{Pallet, Call, Storage, Event<T>},
+		Lrp: pallet_lrp::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
