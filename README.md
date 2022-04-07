@@ -22,6 +22,13 @@ The project's scope is to build three core components that define the foundation
 - [Javascript SDK](https://github.com/atscaletech/libra-js)
 ## Installation
 
+#### Clone Repo
+
+```
+git clone --recursive git@github.com:atscaletech/libra.git
+cd libra
+```
+
 #### Setup environment
 
 ```
