@@ -1,3 +1,34 @@
+//! # Currencies Registry
+//!
+//! The currencies registry allows the registrars to create their own currencies by bonding some
+//! native tokens. When the registrars remove currencies, they will get back the bonded tokens. The
+//! merchants need to accept the currencies before people create payments with these currencies in
+//! the LRP protocol.
+//!
+//! ## Traits
+//!
+//! CurrenciesManager - Including function `is_currency_accepted` to evaluate
+//! the currency is accepted by merchant or not.
+//!
+//! ## Usage
+//!
+//! - `create_currency` - Create a new currency with metadata( name, symbol, decimals).
+//! - `remove_currency` - Remove a existing currency.
+//! - `accept_currency` - Accept a currency before accepting payment with the currency.
+//! - `accept_currency` - Accept a currency before accepting payment with the currency.
+//!
+//! ## Events
+//!
+//! - CurrencyCreated - A new currency is created by a registrar.
+//! - CurrencyRemoved - A currency is removed by the issuer.
+//! - CurrencyAccepted - A currency is accepted by a merchant.
+//!
+//! ## Errors
+//!
+//! - CurrencyExisted - The currency with the same metadata has existed for the registrar.
+//! - CurrencyNotFound - Cannot find the currency match with the currency hash.
+//! - NotCurrencyIssuer - Cannot remove a currency if not is the currency issuer.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
@@ -14,14 +45,11 @@ mod benchmarking;
 #[frame_support::pallet]
 pub mod pallet {
 	use frame_support::{
-		dispatch::DispatchResult,
-		pallet_prelude::*,
-		sp_runtime::traits::Hash,
-		sp_std::vec::Vec,
+		dispatch::DispatchResult, pallet_prelude::*, sp_runtime::traits::Hash, sp_std::vec::Vec,
 	};
 	use frame_system::pallet_prelude::*;
 	use orml_traits::{MultiCurrency, MultiReservableCurrency};
-	use primitives::{ CurrencyId };
+	use primitives::CurrencyId;
 	use scale_info::TypeInfo;
 
 	pub trait CurrenciesManager<AccountId, Hash> {
@@ -29,16 +57,14 @@ pub mod pallet {
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
-	type BalanceOf<T> = <<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
+	type BalanceOf<T> =
+		<<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
 	type CurrencyHashOf<T> = <T as frame_system::Config>::Hash;
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
-		type Currency: MultiReservableCurrency<
-			Self::AccountId,
-			CurrencyId = CurrencyId<Self::Hash>,
-		>;
+		type Currency: MultiReservableCurrency<Self::AccountId, CurrencyId = CurrencyId<Self::Hash>>;
 		#[pallet::constant]
 		type BondingAmount: Get<BalanceOf<Self>>;
 	}
@@ -162,12 +188,15 @@ pub mod pallet {
 	}
 
 	impl<T: Config> CurrenciesManager<T::AccountId, T::Hash> for Pallet<T> {
-		fn is_currency_accepted(merchant: &T::AccountId, currency_id: &CurrencyId<T::Hash>) -> bool {
+		fn is_currency_accepted(
+			merchant: &T::AccountId,
+			currency_id: &CurrencyId<T::Hash>,
+		) -> bool {
 			match currency_id {
 				CurrencyId::<T::Hash>::Native => return true,
 				CurrencyId::<T::Hash>::Registered(hash) => {
 					let accepted_currencies = Self::accepted_currencies(merchant);
-					return accepted_currencies.contains(&hash);
+					return accepted_currencies.contains(&hash)
 				},
 			}
 		}

@@ -42,6 +42,9 @@ std = [
 	"serde",
 	"frame-support/std",
 	"frame-system/std",
+	"primitives/std",
+	"pallet-balances/std",
+	"orml-tokens/std",
 ]
 
 try-runtime = ["frame-support/try-runtime"]

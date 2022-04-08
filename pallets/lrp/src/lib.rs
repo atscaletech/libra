@@ -1,3 +1,56 @@
+//! # Currencies Registry
+//!
+//! LRP protocol allows buyer and seller to make a p2p payment while the cryptocurrencies of the
+//! buyer has locked it until the seller delivers the order.
+//!
+//! ## Usage
+//!
+//! - `create_payment` - Create a new payment from payer to the payee.
+//!
+//! Once payment is created, an amount of currency will be reserved in the payer account. The payer
+//! need to include a description and receipt of the payment.   The receipt will be hashed and
+//! stored in off-chain indexing node to provide proof of any dispute. Payment will be expired
+//! automatically by an off-chain worker after a period if it is not accepted or rejected. If a
+//! payment is expired, and the reserved fund will be unreserved.
+//!
+//! - `accept_payment` - Accept a payment.
+//!
+//! Payment needs to be accepted before processing. After some time, if payment is not
+//! accepted it will be expired. An accepted payment cannot be canceled by the payer.
+//!
+//! - `reject_payment` - Reject a payment.
+//!
+//! The payee can reject the payment in some cases such as they can not deliver the promise or
+//! they feel the payment is high risk. If payment is rejected, the reserved fund of the payer will
+//! be unreserved.
+//!
+//! - `cancel_payment` - Cancel a payment.
+//!
+//! The payer can cancel pending payments. Once they are accepted, they just can be canceled by the
+//! payee. The locked fund of the payer will be released if payment is canceled.
+//!
+//! - `full_fill_payment` - Full fill a payment.
+//!
+//! After delivery of the promise, the payee can mark the payment as full filled. A full filled
+//! payment will auto-complete by an off-chain worker after a while if there is no dispute.
+//!
+//! - `complete_payment` - Complete a payment.
+//!
+//! Payment can be marked as completed manually by the payer when they feel satisfied. When
+//! payment is completed, and the locked fund of the payer is unlocked and transferred to the payee.
+//! There is nothing that can be done with a completed payment such as a dispute, ...
+//!
+//! ## Events
+//!
+//! - PaymentCreated - A payment is created by the payer.
+//! - PaymentAccepted - A payment is accepted by the payee.
+//! - PaymentRejected - A payment is rejected by payee.
+//! - PaymentExpired - A payment is not accepted or rejected by the payee after the pending period.
+//! - PaymentCancelled - A payment is canceled by the payer or payee.
+//! - PaymentFullFilled - A payment is marked as full-filled by the payee.
+//! - PaymentCompleted - A payment is marked as completed by the payer or autocomplete by the
+//!   off-chain worker.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
@@ -13,6 +66,7 @@ mod benchmarking;
 
 #[frame_support::pallet]
 pub mod pallet {
+	use currencies_registry::CurrenciesManager;
 	use frame_support::{
 		dispatch::DispatchResult, log, pallet_prelude::*, sp_runtime::traits::Hash,
 		sp_std::vec::Vec,
@@ -20,22 +74,18 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use orml_traits::{MultiCurrency, MultiReservableCurrency};
 	use pallet_timestamp::{self as timestamp};
-	use currencies_registry::CurrenciesManager;
-	use primitives::{ CurrencyId };
+	use primitives::CurrencyId;
 	use scale_info::TypeInfo;
 	use sp_io::offchain_index;
 	use sp_runtime::RuntimeDebug;
 
 	#[cfg(feature = "std")]
-	use serde::{Deserialize, Serialize}; 
+	use serde::{Deserialize, Serialize};
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + timestamp::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
-		type Currency: MultiReservableCurrency<
-			Self::AccountId,
-			CurrencyId = CurrencyId<Self::Hash>,
-		>;
+		type Currency: MultiReservableCurrency<Self::AccountId, CurrencyId = CurrencyId<Self::Hash>>;
 		type CurrenciesManager: CurrenciesManager<Self::AccountId, Self::Hash>;
 		#[pallet::constant]
 		type PendingPaymentWaitingTime: Get<MomentOf<Self>>;
@@ -44,7 +94,8 @@ pub mod pallet {
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
-	type BalanceOf<T> = <<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
+	type BalanceOf<T> =
+		<<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
 	type PaymentHashOf<T> = <T as frame_system::Config>::Hash;
 	type MomentOf<T> = <T as pallet_timestamp::Config>::Moment;
 
@@ -324,7 +375,10 @@ pub mod pallet {
 				<Error<T>>::InsufficientBalance,
 			);
 
-			ensure!(T::CurrenciesManager::is_currency_accepted(&payee, &currency_id), <Error<T>>::UnacceptedCurrency);
+			ensure!(
+				T::CurrenciesManager::is_currency_accepted(&payee, &currency_id),
+				<Error<T>>::UnacceptedCurrency
+			);
 
 			T::Currency::reserve(currency_id.clone(), &payer, amount.clone())?;
 
