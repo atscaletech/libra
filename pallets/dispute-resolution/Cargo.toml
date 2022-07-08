@@ -1,0 +1,57 @@
+[package]
+name = 'dispute-resolution'
+version = '0.0.0'
+description = 'A decentralized payment dispute resolution.'
+authors = ['AtScale <https://github.com/atscaletech>']
+homepage = 'https://atscale.xyz/'
+edition = '2021'
+license = 'Apache License 2.0'
+publish = false
+repository = 'https://github.com/atscaletech/libra/'
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+serde = { version = "1.0.124", optional = true, default-features = false }
+codec = { package = "parity-scale-codec", version = "2.0.0", default-features = false, features = [
+	"derive",
+] }
+scale-info = { version = "1.0", default-features = false, features = [
+	"derive",
+] }
+
+frame-support = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+frame-system = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+sp-io = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+orml-traits = { path = "../../open-runtime-module-library/traits", default-features = false }
+primitives = { path = "../../primitives", default-features = false }
+pallet-lrp = { path = "../lrp", default-features = false }
+pallet-resolvers = { path = "../resolvers", default-features = false }
+
+[dev-dependencies]
+sp-core = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+pallet-balances = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+pallet-randomness-collective-flip = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+currencies-registry = { default-features = false, path = "../currencies-registry" }
+orml-currencies = { path = "../../open-runtime-module-library/currencies", default-features = false }
+orml-tokens = { path = "../../open-runtime-module-library/tokens", default-features = false }
+
+[features]
+default = ["std"]
+std = [
+	"codec/std",
+	"scale-info/std",
+	"serde",
+	"frame-support/std",
+	"frame-system/std",
+	"pallet-timestamp/std",
+	"pallet-balances/std",
+	"orml-currencies/std",
+	"orml-tokens/std",
+	"primitives/std"
+]
+
+try-runtime = ["frame-support/try-runtime"]
