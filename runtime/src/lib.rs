@@ -14,9 +14,7 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
-	traits::{
-		AccountIdLookup, BlakeTwo256, Block as BlockT, NumberFor, Zero,
-	},
+	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, NumberFor, Zero},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult,
 };
@@ -29,6 +27,8 @@ use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::parameter_type_with_key;
 
 // A few exports that help ease life for downstream crates.
+pub use currencies_registry;
+pub use dispute_resolution;
 pub use frame_support::{
 	construct_runtime, parameter_types,
 	traits::{KeyOwnerProofSystem, Nothing, Randomness, StorageInfo},
@@ -36,15 +36,19 @@ pub use frame_support::{
 		constants::{BlockExecutionWeight, ExtrinsicBaseWeight, RocksDbWeight, WEIGHT_PER_SECOND},
 		IdentityFee, Weight,
 	},
-	StorageValue, RuntimeDebug,
+	RuntimeDebug, StorageValue,
 };
 pub use pallet_balances::Call as BalancesCall;
+pub use pallet_identities;
 pub use pallet_lrp;
-pub use currencies_registry;
+pub use pallet_resolvers;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 
-pub use primitives::{AccountId, Amount, Balance, BlockNumber, Moment, CurrencyId, Hash, Index, Signature};
+pub use primitives::{
+	AccountId, Amount, Balance, BlockNumber, Credibility, CurrencyId, Hash, Index, Moment,
+	Signature,
+};
 #[cfg(any(feature = "std", test))]
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
@@ -79,17 +83,17 @@ pub mod opaque {
 pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("libra-runtime"),
 	impl_name: create_runtime_str!("libra-runtime"),
-	authoring_version: 1,
+	authoring_version: 2,
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 100,
-	impl_version: 1,
+	spec_version: 101,
+	impl_version: 2,
 	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 1,
-	state_version: 0,
+	transaction_version: 2,
+	state_version: 1,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -316,6 +320,53 @@ impl pallet_lrp::Config for Runtime {
 	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
 }
 
+parameter_types! {
+	pub const PenaltyTokenLockTime: Moment = 15778476000; // 6 months
+	pub const UndelegateTime: Moment = 2592000000; // 30 days
+	pub const MinimumSelfStake: Balance = 10_000_000_000_000_000;
+	pub const ActivationStakeAmount: Balance = 100_000_000_000_000_000;
+	pub const InitialCredibility: Credibility = 60;
+	pub const MaxCredibility: Credibility = 100;
+	pub const MinCredibility: Credibility = 30;
+}
+
+impl pallet_resolvers::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type Randomness = RandomnessCollectiveFlip;
+	type PenaltyTokenLockTime = PenaltyTokenLockTime;
+	type MinimumSelfStake = MinimumSelfStake;
+	type ActivationStakeAmount = ActivationStakeAmount;
+	type UndelegateTime = UndelegateTime;
+	type InitialCredibility = InitialCredibility;
+	type MaxCredibility = MaxCredibility;
+	type MinCredibility = MinCredibility;
+}
+
+parameter_types! {
+	pub const DisputeFinalizingTime: Moment = 604800000; // 7 days
+	pub const DisputeFee: Balance = 50_000_000_000_000;
+}
+
+impl dispute_resolution::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type PaymentProtocol = Lrp;
+	type ResolversNetwork = ResolversNetwork;
+	type DisputeFinalizingTime = DisputeFinalizingTime;
+	type DisputeFee = DisputeFee;
+}
+
+parameter_types! {
+	pub const EvaluatorBonding: Balance = 50_000_000_000_000;
+}
+
+impl pallet_identities::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type EvaluatorBonding = EvaluatorBonding;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -336,6 +387,9 @@ construct_runtime!(
 		Currencies: orml_currencies::{Pallet, Call, Event<T>},
 		CurrenciesRegistry: currencies_registry::{Pallet, Call, Storage, Event<T>},
 		Lrp: pallet_lrp::{Pallet, Call, Storage, Event<T>},
+		ResolversNetwork: pallet_resolvers::{Pallet, Call, Storage, Event<T>},
+		DisputeResolution: dispute_resolution::{Pallet, Call, Storage, Event<T>},
+		Identities: pallet_identities::{Pallet, Call, Storage, Event<T>},
 	}
 );
 

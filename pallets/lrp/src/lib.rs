@@ -99,6 +99,14 @@ pub mod pallet {
 	type PaymentHashOf<T> = <T as frame_system::Config>::Hash;
 	type MomentOf<T> = <T as pallet_timestamp::Config>::Moment;
 
+	pub trait PaymentProtocol<Hash, AccountId, Balance> {
+		fn get_payment(
+			hash: &Hash,
+		) -> Result<(AccountId, AccountId, Balance, CurrencyId<Hash>), DispatchError>;
+
+		fn can_dispute(hash: &Hash) -> bool;
+	}
+
 	#[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo)]
 	#[scale_info(skip_type_params(T))]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
@@ -698,6 +706,27 @@ pub mod pallet {
 			});
 
 			Ok(())
+		}
+	}
+
+	impl<T: Config> PaymentProtocol<T::Hash, T::AccountId, BalanceOf<T>> for Pallet<T> {
+		fn get_payment(
+			hash: &T::Hash,
+		) -> Result<(T::AccountId, T::AccountId, BalanceOf<T>, CurrencyId<T::Hash>), DispatchError>
+		{
+			let payment = Self::payments(hash).ok_or(<Error<T>>::PaymentNotFound)?;
+
+			Ok((payment.payer, payment.payee, payment.amount, payment.currency_id))
+		}
+
+		fn can_dispute(hash: &T::Hash) -> bool {
+			let payment = Self::payments(hash);
+
+			if let Some(payment) = payment {
+				return payment.status == PaymentStatus::FullFilled || payment.status == PaymentStatus::Accepted
+			}
+
+			false
 		}
 	}
 }

@@ -3,6 +3,10 @@ members = [
     'node',
     'runtime',
     'pallets/lrp',
+    'pallets/currencies-registry',
+    'pallets/identities',
+    'pallets/resolvers',
+    'pallets/dispute-resolution'
 ]
 [profile.release]
 panic = 'unwind'

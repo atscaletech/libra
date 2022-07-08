@@ -1,7 +1,7 @@
 [package]
-name = 'pallet-identities'
+name = 'pallet-resolvers'
 version = '0.0.0'
-description = 'Dentrailzied identities management pallet.'
+description = 'A decentralized dispute resolution.'
 authors = ['AtScale <https://github.com/atscaletech>']
 homepage = 'https://atscale.xyz/'
 edition = '2021'
@@ -27,12 +27,13 @@ sp-runtime = { default-features = false, git = "https://github.com/paritytech/su
 sp-io = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 orml-traits = { path = "../../open-runtime-module-library/traits", default-features = false }
-orml-utilities = { path = "../../open-runtime-module-library/utilities", default-features = false }
 primitives = { path = "../../primitives", default-features = false }
 
 [dev-dependencies]
 sp-core = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 pallet-balances = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+pallet-babe = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+pallet-randomness-collective-flip = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 orml-currencies = { path = "../../open-runtime-module-library/currencies", default-features = false }
 orml-tokens = { path = "../../open-runtime-module-library/tokens", default-features = false }
 
@@ -44,11 +45,10 @@ std = [
 	"serde",
 	"frame-support/std",
 	"frame-system/std",
+	"primitives/std",
 	"pallet-timestamp/std",
 	"pallet-balances/std",
-	"primitives/std",
-	"orml-traits/std",
-	"orml-utilities/std",
+	"pallet-babe/std",
 	"orml-currencies/std",
 	"orml-tokens/std",
 ]
