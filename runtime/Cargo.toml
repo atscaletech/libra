@@ -52,7 +52,10 @@ primitives = { path = "../primitives", default-features = false }
 
 # Custom pallet
 pallet-lrp = { default-features = false, path = "../pallets/lrp" }
-currencies-registry = {default-features = false, path = "../pallets/currencies-registry"}
+currencies-registry = { default-features = false, path = "../pallets/currencies-registry" }
+pallet-resolvers = { default-features = false, path = "../pallets/resolvers" }
+dispute-resolution = { default-features = false, path = "../pallets/dispute-resolution" }
+pallet-identities = { default-features = false, path = "../pallets/identities" }
 
 # Used for runtime benchmarking
 frame-benchmarking = { git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16", default-features = false, optional = true }
@@ -80,6 +83,9 @@ std = [
 	"pallet-randomness-collective-flip/std",
 	"pallet-sudo/std",
 	"pallet-lrp/std",
+	"pallet-resolvers/std",
+	"pallet-identities/std",
+	"dispute-resolution/std",
 	"pallet-timestamp/std",
 	"pallet-transaction-payment-rpc-runtime-api/std",
 	"pallet-transaction-payment/std",
