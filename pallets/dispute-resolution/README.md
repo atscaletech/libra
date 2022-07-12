@@ -30,17 +30,25 @@ stateDiagram
 **Issue a dispute**
 ```rs
 pub fn create_dispute(
-  origin: OriginFor<T> // Only payer is accepted
+  origin: OriginFor<T>, // Only payer is accepted
   payment_hash: HashOf<T>,
   argument: Vec<u8>
 )
 ```
 **Fight a dispute**
 ```rs
-pub fn create_dispute(
-  origin: OriginFor<T> // Only payer is accepted
+pub fn fight_dispute(
+  origin: OriginFor<T>,
   payment_hash: HashOf<T>,
   argument: Vec<u8>
+)
+```
+
+**Escalate a dispute**
+```rs
+pub fn escalate_dispute(
+  origin: OriginFor<T>,
+  payment_hash: HashOf<T>
 )
 ```
 
