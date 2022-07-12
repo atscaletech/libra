@@ -6,7 +6,8 @@ members = [
     'pallets/currencies-registry',
     'pallets/identities',
     'pallets/resolvers',
-    'pallets/dispute-resolution'
+    'pallets/dispute-resolution',
+    'pallets/faucet'
 ]
 [profile.release]
 panic = 'unwind'

@@ -3139,6 +3139,7 @@ dependencies = [
  "orml-traits",
  "pallet-aura",
  "pallet-balances",
+ "pallet-faucet",
  "pallet-grandpa",
  "pallet-identities",
  "pallet-lrp",
@@ -3996,6 +3997,25 @@ dependencies = [
  "sp-npos-elections",
  "sp-runtime",
  "sp-std",
+]
+
+[[package]]
+name = "pallet-faucet"
+version = "0.0.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "orml-currencies",
+ "orml-tokens",
+ "orml-traits",
+ "pallet-balances",
+ "parity-scale-codec",
+ "primitives",
+ "scale-info",
+ "serde",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
 ]
 
 [[package]]
