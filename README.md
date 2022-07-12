@@ -18,7 +18,7 @@ Libra bridges the gap between blockchain and eCommerce to enable all people to e
 The project's scope is to build three core components that define the foundation of Libra Network: LRP protocol, Resolver Networks, and Javascript SDK. From these components, people can easily integrate the cryptocurrencies payment to their business while their customers are protected by Libra Network.
 
 - [LRP Protocol](https://github.com/atscaletech/libra/blob/main/pallets/lrp/README.md)
-- Resolver Network (WIP)
+- [Decentralized Dispute Resolution](https://github.com/atscaletech/libra/tree/main/pallets/dispute-resolution#overview)
 - [Javascript SDK](https://github.com/atscaletech/libra-js)
 ## Installation
 
