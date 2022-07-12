@@ -42,6 +42,7 @@ pub use pallet_balances::Call as BalancesCall;
 pub use pallet_identities;
 pub use pallet_lrp;
 pub use pallet_resolvers;
+pub use pallet_faucet;
 pub use pallet_timestamp::Call as TimestampCall;
 use pallet_transaction_payment::CurrencyAdapter;
 
@@ -83,17 +84,17 @@ pub mod opaque {
 pub const VERSION: RuntimeVersion = RuntimeVersion {
 	spec_name: create_runtime_str!("libra-runtime"),
 	impl_name: create_runtime_str!("libra-runtime"),
-	authoring_version: 2,
+	authoring_version: 3,
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 101,
-	impl_version: 2,
+	spec_version: 102,
+	impl_version: 3,
 	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 2,
-	state_version: 1,
+	transaction_version: 3,
+	state_version: 2,
 };
 
 /// This determines the average expected block time that we are targeting.
@@ -367,6 +368,16 @@ impl pallet_identities::Config for Runtime {
 	type EvaluatorBonding = EvaluatorBonding;
 }
 
+parameter_types! {
+	pub const NativeTokenDeposit: Balance = 1_000_000;
+}
+
+impl pallet_faucet::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type NativeTokenDeposit = NativeTokenDeposit;
+}
+
 // Create the runtime by composing the FRAME pallets that were previously configured.
 construct_runtime!(
 	pub enum Runtime where
@@ -390,6 +401,7 @@ construct_runtime!(
 		ResolversNetwork: pallet_resolvers::{Pallet, Call, Storage, Event<T>},
 		DisputeResolution: dispute_resolution::{Pallet, Call, Storage, Event<T>},
 		Identities: pallet_identities::{Pallet, Call, Storage, Event<T>},
+		Faucet: pallet_faucet::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
