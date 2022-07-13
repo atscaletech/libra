@@ -343,12 +343,12 @@ pub mod pallet {
 
 		fn evaluate_pending_payments() -> DispatchResult {
 			let pending_payment_hashes = <PendingPaymentHashes<T>>::get();
-			if pending_payment_hashes.len() == 0 {
+			if pending_payment_hashes.is_empty() {
 				return Ok(())
 			}
 
 			for payment_hash in pending_payment_hashes.iter() {
-				Self::do_expire_payment(payment_hash.clone())?;
+				Self::do_expire_payment(*payment_hash)?;
 			}
 
 			Ok(())
@@ -357,12 +357,12 @@ pub mod pallet {
 		fn evaluate_full_filled_payments() -> DispatchResult {
 			let full_filled_payment_hashes = <FullFilledPaymentHashes<T>>::get();
 
-			if full_filled_payment_hashes.len() == 0 {
+			if full_filled_payment_hashes.is_empty() {
 				return Ok(())
 			}
 
 			for payment_hash in full_filled_payment_hashes.iter() {
-				Self::do_auto_complete_full_filled_payments(payment_hash.clone())?;
+				Self::do_auto_complete_full_filled_payments(*payment_hash)?;
 			}
 
 			Ok(())
@@ -379,7 +379,7 @@ pub mod pallet {
 			let id = <LatestPaymentId<T>>::get().checked_add(1).ok_or(<Error<T>>::Overflow)?;
 
 			ensure!(
-				T::Currency::free_balance(currency_id.clone(), &payer) >= amount,
+				T::Currency::free_balance(currency_id, &payer) >= amount,
 				<Error<T>>::InsufficientBalance,
 			);
 
@@ -388,7 +388,7 @@ pub mod pallet {
 				<Error<T>>::UnacceptedCurrency
 			);
 
-			T::Currency::reserve(currency_id.clone(), &payer, amount.clone())?;
+			T::Currency::reserve(currency_id, &payer, amount)?;
 
 			let now = <timestamp::Pallet<T>>::get();
 			let receipt_hash = T::Hashing::hash_of(&receipt);
@@ -400,7 +400,7 @@ pub mod pallet {
 				payer: payer.clone(),
 				payee: payee.clone(),
 				amount,
-				currency_id: currency_id.clone(),
+				currency_id,
 				description,
 				receipt_hash,
 				created_at: now,
@@ -413,11 +413,11 @@ pub mod pallet {
 
 			<Payments<T>>::insert(&payment_hash, payment);
 			<PaymentsOwned<T>>::mutate(&payer, |payment_hashes| {
-				payment_hashes.push(payment_hash.clone())
+				payment_hashes.push(payment_hash)
 			});
 			<LatestPaymentId<T>>::put(id);
 			<PendingPaymentHashes<T>>::mutate(|payment_hashes| {
-				payment_hashes.push(payment_hash.clone())
+				payment_hashes.push(payment_hash)
 			});
 
 			Self::deposit_event(Event::PaymentCreated {
@@ -484,9 +484,9 @@ pub mod pallet {
 			ensure!(payment.status == PaymentStatus::Pending, <Error<T>>::InvalidStatusChange);
 
 			T::Currency::unreserve(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
-				payment.amount.clone(),
+				payment.amount,
 			);
 
 			Self::do_update_payment(sender, payment_hash, PaymentStatus::Rejected)?;
@@ -519,9 +519,9 @@ pub mod pallet {
 			}
 
 			T::Currency::unreserve(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
-				payment.amount.clone(),
+				payment.amount,
 			);
 
 			Self::do_update_payment(payment.updated_by, payment_hash, PaymentStatus::Expired)?;
@@ -556,9 +556,9 @@ pub mod pallet {
 			}
 
 			T::Currency::unreserve(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
-				payment.amount.clone(),
+				payment.amount,
 			);
 
 			Self::do_update_payment(sender, payment_hash, PaymentStatus::Cancelled)?;
@@ -586,7 +586,7 @@ pub mod pallet {
 			Self::do_update_payment(sender, payment_hash, PaymentStatus::FullFilled)?;
 
 			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
-				payment_hashes.push(payment_hash.clone())
+				payment_hashes.push(payment_hash)
 			});
 
 			Self::deposit_event(Event::PaymentFullFilled {
@@ -611,16 +611,16 @@ pub mod pallet {
 			}
 
 			T::Currency::unreserve(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
-				payment.amount.clone(),
+				payment.amount,
 			);
 
 			T::Currency::transfer(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
 				&payment.payee,
-				payment.amount.clone(),
+				payment.amount,
 			)?;
 
 			Self::do_update_payment(payment.updated_by, payment_hash, PaymentStatus::Completed)?;
@@ -679,16 +679,16 @@ pub mod pallet {
 			ensure!(payment.status == PaymentStatus::FullFilled, <Error<T>>::InvalidStatusChange);
 
 			T::Currency::unreserve(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
-				payment.amount.clone(),
+				payment.amount,
 			);
 
 			T::Currency::transfer(
-				payment.currency_id.clone(),
+				payment.currency_id,
 				&payment.payer,
 				&payment.payee,
-				payment.amount.clone(),
+				payment.amount,
 			)?;
 
 			Self::do_update_payment(sender, payment_hash, PaymentStatus::Completed)?;

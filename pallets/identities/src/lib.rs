@@ -456,7 +456,7 @@ pub mod pallet {
 			rate: BalanceOf<T>,
 		) -> DispatchResult {
 			ensure!(!<Evaluators<T>>::contains_key(&account), <Error<T>>::EvaluatorExisted);
-			T::Currency::reserve(CurrencyId::Native.into(), &account, T::EvaluatorBonding::get())?;
+			T::Currency::reserve(CurrencyId::Native, &account, T::EvaluatorBonding::get())?;
 			let evaluator = Evaluator::<T> { name, about, rate };
 			<Evaluators<T>>::insert(&account, evaluator.clone());
 			Self::deposit_event(Event::EvaluatorCreated {
@@ -514,7 +514,7 @@ pub mod pallet {
 
 			if let Some(request) = request {
 				let transcript_pos: Vec<u64> =
-					transcript.clone().iter().map(|item| item.0).collect();
+					transcript.iter().map(|item| item.0).collect();
 
 				ensure!(transcript_pos == request.1, <Error<T>>::InvalidTranscript);
 
@@ -584,11 +584,11 @@ pub mod pallet {
 			}
 
 			// domain does not contain .
-			if dot_indexes.len() == 0 {
+			if dot_indexes.is_empty() {
 				return false
 			}
 
-			return true
+			true
 		}
 
 		fn _is_valid_email(value: Vec<u8>) -> bool {

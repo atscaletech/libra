@@ -137,7 +137,7 @@ pub mod pallet {
 			ensure!(!<Currencies<T>>::contains_key(currency_hash), <Error<T>>::CurrencyExisted);
 
 			<Currencies<T>>::insert(&currency_hash, metadata);
-			T::Currency::reserve(CurrencyId::Native.into(), &issuer, T::BondingAmount::get())?;
+			T::Currency::reserve(CurrencyId::Native, &issuer, T::BondingAmount::get())?;
 
 			Self::deposit_event(Event::CurrencyCreated { currency_hash, created_by: issuer });
 
@@ -178,7 +178,7 @@ pub mod pallet {
 			ensure!(<Currencies<T>>::contains_key(currency_hash), <Error<T>>::CurrencyNotFound);
 
 			<AcceptedCurrencies<T>>::mutate(&merchant, |currency_ids| {
-				currency_ids.push(currency_hash.clone())
+				currency_ids.push(currency_hash)
 			});
 
 			Self::deposit_event(Event::CurrencyAccepted { currency_hash, accepted_by: merchant });
@@ -193,10 +193,10 @@ pub mod pallet {
 			currency_id: &CurrencyId<T::Hash>,
 		) -> bool {
 			match currency_id {
-				CurrencyId::<T::Hash>::Native => return true,
+				CurrencyId::<T::Hash>::Native => true,
 				CurrencyId::<T::Hash>::Registered(hash) => {
 					let accepted_currencies = Self::accepted_currencies(merchant);
-					return accepted_currencies.contains(&hash)
+					accepted_currencies.contains(hash)
 				},
 			}
 		}

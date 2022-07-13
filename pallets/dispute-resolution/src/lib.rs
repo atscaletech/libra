@@ -244,7 +244,7 @@ pub mod pallet {
 			ensure!(issuer == payer, <Error<T>>::AccessDenied);
 
 			let fee = Self::_compute_dispute_fee(1);
-			Self::_lock_resolvers_fee(&issuer, fee.clone())?;
+			Self::_lock_resolvers_fee(&issuer, fee)?;
 
 			let expired_at = <timestamp::Pallet<T>>::get() + T::DisputeFinalizingTime::get();
 
@@ -298,11 +298,11 @@ pub mod pallet {
 			// The number of resolvers will increases after each escalating round.
 			let number_of_resolver = dispute.resolvers.len() + 1;
 
-			Self::_lock_resolvers_fee(&who, dispute.fee.clone())?;
+			Self::_lock_resolvers_fee(&who, dispute.fee)?;
 
 			for _i in 0..number_of_resolver {
 				let resolver = T::ResolversNetwork::get_resolver(
-					payment_hash.clone(),
+					payment_hash,
 					dispute.resolvers.clone(),
 				)?;
 				dispute.resolvers.push(resolver);
@@ -327,7 +327,7 @@ pub mod pallet {
 			);
 
 			let fee = Self::_compute_dispute_fee(dispute.resolvers.len() + 1);
-			Self::_lock_resolvers_fee(&who, fee.clone())?;
+			Self::_lock_resolvers_fee(&who, fee)?;
 			dispute.fee += fee;
 
 			if who == payer {
@@ -391,7 +391,7 @@ pub mod pallet {
 
 		fn _lock_resolvers_fee(requestor: &AccountOf<T>, fee: BalanceOf<T>) -> DispatchResult {
 			ensure!(
-				T::Currency::free_balance(CurrencyId::Native, &requestor) >= fee,
+				T::Currency::free_balance(CurrencyId::Native, requestor) >= fee,
 				<Error<T>>::InsufficientBalance,
 			);
 			T::Currency::reserve(CurrencyId::Native, requestor, fee)?;
@@ -435,25 +435,25 @@ pub mod pallet {
 			for hash in hashes.iter() {
 				let mut dispute = Self::disputes(&hash).ok_or(<Error<T>>::DisputeNotFound)?;
 				let now = <timestamp::Pallet<T>>::get();
-				let (payer, payee, amount, currency_id) = T::PaymentProtocol::get_payment(&hash)?;
+				let (payer, payee, amount, currency_id) = T::PaymentProtocol::get_payment(hash)?;
 
 				// If dispute is out of finalizing time, finalize it as the outcome.
 				if now >= dispute.expired_at {
 					match dispute.outcome {
 						Judgment::ReleaseFundToPayee => {
-							T::Currency::unreserve(currency_id.clone(), &payer, amount.clone());
+							T::Currency::unreserve(currency_id, &payer, amount);
 							T::Currency::transfer(
-								currency_id.clone(),
+								currency_id,
 								&payer,
 								&payee,
-								amount.clone(),
+								amount,
 							)?;
-							Self::_release_resolvers_fee(&payee, dispute.fee.clone());
+							Self::_release_resolvers_fee(&payee, dispute.fee);
 							Self::_distribute_resolvers_fee(&payer, dispute.resolvers.clone())?;
 						},
 						Judgment::ReleaseFundToPayer => {
-							T::Currency::unreserve(currency_id.clone(), &payer, amount.clone());
-							Self::_release_resolvers_fee(&payer, dispute.fee.clone());
+							T::Currency::unreserve(currency_id, &payer, amount);
+							Self::_release_resolvers_fee(&payer, dispute.fee);
 							Self::_distribute_resolvers_fee(&payee, dispute.resolvers.clone())?;
 						},
 					}
@@ -461,14 +461,14 @@ pub mod pallet {
 
 					<Disputes<T>>::insert(&hash, dispute);
 					Self::deposit_event(Event::DisputeResolved {
-						payment_hash: hash.clone(),
+						payment_hash: *hash,
 						payer,
 						payee,
 						currency_id,
 						amount,
 					});
 
-					resolved_disputes.push(hash.clone());
+					resolved_disputes.push(*hash);
 				} else {
 					// The queue is sorted by time. If a dispute is in the waiting time, the rest of
 					// the queue after the dispute is still in the waiting time.

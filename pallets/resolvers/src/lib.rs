@@ -20,7 +20,7 @@
 //!
 //! ## Traits
 //!
-//!	ResolverNetwork
+//! ResolverNetwork
 //! - get_resolver - Get a random resolver from resolvers network.
 //! - increase_credibility - Increase a resolver's credibility
 //! A resolver can gain credibility by resolving a dispute with correct judgment. The credibility
@@ -281,8 +281,8 @@ pub mod pallet {
 				application_digest,
 				credibility: T::InitialCredibility::get(),
 				status: ResolverStatus::Candidacy,
-				self_stake: self_stake.clone(),
-				total_stake: self_stake.clone(),
+				self_stake,
+				total_stake: self_stake,
 				delegations: [].to_vec(),
 				updated_at: now,
 			};
@@ -312,7 +312,7 @@ pub mod pallet {
 			let mut resolver =
 				Self::resolvers(&resolver_account).ok_or(<Error<T>>::ResolverNotFound)?;
 
-			T::Currency::reserve(CurrencyId::<T::Hash>::Native, &sender, amount.clone())?;
+			T::Currency::reserve(CurrencyId::<T::Hash>::Native, &sender, amount)?;
 
 			let delegation_position = resolver
 				.delegations
@@ -321,11 +321,11 @@ pub mod pallet {
 
 			match delegation_position {
 				Some(p) => {
-					resolver.delegations[p].amount += amount.clone();
+					resolver.delegations[p].amount += amount;
 				},
 				None => {
 					let delegation =
-						Delegation::<T> { delegator: sender.clone(), amount: amount.clone() };
+						Delegation::<T> { delegator: sender, amount };
 
 					resolver.delegations.push(delegation);
 				},
@@ -370,7 +370,7 @@ pub mod pallet {
 					let release_at = <timestamp::Pallet<T>>::get() + T::UndelegateTime::get();
 
 					let pending_fund =
-						PendingFund::<T> { owner: sender, amount: amount.clone(), release_at };
+						PendingFund::<T> { owner: sender, amount, release_at };
 
 					<PendingFunds<T>>::mutate(|pending_funds| {
 						pending_funds.push(pending_fund);
@@ -401,7 +401,7 @@ pub mod pallet {
 			let resolver_pending_fund = PendingFund::<T> {
 				owner: resolver_account.clone(),
 				amount: resolver.self_stake,
-				release_at: release_at.clone(),
+				release_at,
 			};
 			<PendingFunds<T>>::mutate(|pending_funds| {
 				pending_funds.push(resolver_pending_fund);
@@ -410,8 +410,8 @@ pub mod pallet {
 			for delegation in resolver.delegations.iter() {
 				let pending_fund = PendingFund::<T> {
 					owner: delegation.delegator.clone(),
-					amount: delegation.amount.clone(),
-					release_at: release_at.clone(),
+					amount: delegation.amount,
+					release_at,
 				};
 
 				<PendingFunds<T>>::mutate(|pending_funds| {
@@ -449,7 +449,7 @@ pub mod pallet {
 					T::Currency::unreserve(
 						CurrencyId::<T::Hash>::Native,
 						&fund.owner,
-						fund.amount.clone(),
+						fund.amount,
 					);
 				}
 
@@ -469,7 +469,7 @@ pub mod pallet {
 		) -> Result<T::AccountId, DispatchError> {
 			let mut active_resolvers = <ActiveResolvers<T>>::get();
 			active_resolvers.retain(|id| !selected.contains(id));
-			ensure!(active_resolvers.len() > 0, <Error<T>>::NoAnyActiveResolver);
+			ensure!(!active_resolvers.is_empty(), <Error<T>>::NoAnyActiveResolver);
 			let (output, _block_number) = T::Randomness::random(payment_hash.as_ref());
 			let random_number: usize = output.as_ref().iter().map(|x| *x as usize).sum();
 
