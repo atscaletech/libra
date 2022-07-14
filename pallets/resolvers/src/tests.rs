@@ -7,6 +7,7 @@ use mock::{
 	System, Timestamp, ALICE, BOB, CHARLIE, INITIAL_CREDIBILITY, UNDELEGATE_TIME,
 };
 use orml_traits::MultiReservableCurrency;
+use crate::pallet::ResolversNetwork as ResolversNetworkT;
 
 pub const INIT_TIMESTAMP: u64 = 1_000;
 pub const BLOCK_TIME: u64 = 6_000;
@@ -240,5 +241,47 @@ fn resign_works() {
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 0);
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &BOB), 0);
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &CHARLIE), 0);
+	});
+}
+
+#[test]
+fn test_increase_resolver_credibility_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+		// Create a active resolver.
+		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 1000));
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.status, crate::ResolverStatus::Active);
+		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY);
+
+		// Test reduce a resolver credibility.
+		assert_ok!(ResolversNetwork::increase_credibility(ALICE, 10));
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY + 10);
+	});
+}
+
+#[test]
+fn test_reduce_resolver_credibility_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+
+		// Test a resolver resign.
+		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 1000));
+
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.status, crate::ResolverStatus::Active);
+		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY);
+		assert_ok!(ResolversNetwork::reduce_credibility(ALICE, 10));
+
+		// Test reduce a resolver credibility.
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY - 10);
+
+		// Test a resolver will be terminated if credibility under MinimumCredibility
+		assert_ok!(ResolversNetwork::reduce_credibility(ALICE, 30));
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.credibility, 20);
+		assert_eq!(resolver.status, crate::ResolverStatus::Terminated)
 	});
 }

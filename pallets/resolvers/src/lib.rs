@@ -488,6 +488,8 @@ pub mod pallet {
 			} else {
 				resolver.credibility += amount;
 			}
+
+			<Resolvers<T>>::insert(resolver_account, resolver);
 			Ok(())
 		}
 
@@ -498,6 +500,7 @@ pub mod pallet {
 			let mut resolver =
 				Self::resolvers(&resolver_account).ok_or(<Error<T>>::NotAResolver)?;
 			resolver.credibility -= amount;
+			<Resolvers<T>>::insert(resolver_account.clone(), resolver.clone());
 			if resolver.credibility < T::MinCredibility::get() {
 				Self::_terminate_resolver(resolver_account)?;
 			}
