@@ -18,10 +18,12 @@
 //! # Usage
 //! ## Identity Owner
 //! - `create_identity`: create a new identity
-//! - `update_identity`: update existed identity. This will replace the old identity with the new one.
+//! - `update_identity`: update existed identity. This will replace the old identity with the new
+//!   one.
 //! - `update_identity_data`: update a data field of an existed identity
 //! - `add_identity_data`: add a new data field to an existed identity
-//! - `remove_identity`: remove an existed identity. The identity reviews will not be removed after this action.
+//! - `remove_identity`: remove an existed identity. The identity reviews will not be removed after
+//!   this action.
 //! - `request_to_verify`: request an evaluator to verify identity data
 //! ## Identity Verify Services
 //! - `create_evaluator`: bond native tokens to become evaluator.
@@ -60,11 +62,24 @@ pub mod pallet {
 		/// The amount that an account need to bond to become an evaluator.
 		#[pallet::constant]
 		type EvaluatorBonding: Get<BalanceOf<Self>>;
+		/// Initial credibility of an identity.
+		#[pallet::constant]
+		type InitialCredibility: Get<Credibility>;
+		/// Max credibility of an identity.
+		#[pallet::constant]
+		type MaxCredibility: Get<Credibility>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
 	type BalanceOf<T> =
 		<<T as Config>::Currency as MultiCurrency<<T as frame_system::Config>::AccountId>>::Balance;
+
+	pub trait IdentitiesManager<AccountId> {
+		fn has_identity(account_id: &AccountId) -> bool;
+		fn get_credibility(account_id: &AccountId) -> Result<Credibility, DispatchError>;
+		fn increase_credibility(account_id: &AccountId, amount: Credibility) -> DispatchResult;
+		fn decrease_credibility(account_id: &AccountId, amount: Credibility) -> DispatchResult;
+	}
 
 	#[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo)]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
@@ -96,7 +111,6 @@ pub mod pallet {
 	pub struct IdentityField<T: Config> {
 		pub name: Vec<u8>,
 		pub value: Vec<u8>,
-		pub credibility: Credibility,
 		pub verify_method: VerifyMethod,
 		pub is_verified: bool,
 		pub verify_by: Option<AccountOf<T>>,
@@ -127,6 +141,7 @@ pub mod pallet {
 	pub struct Identity<T: Config> {
 		pub name: Vec<u8>,
 		pub identity_type: IdentityType,
+		pub credibility: Credibility,
 		pub data: Vec<IdentityField<T>>,
 		pub reviews: Vec<IdentityReview<T>>,
 	}
@@ -364,6 +379,7 @@ pub mod pallet {
 			let identity = Identity {
 				name,
 				identity_type,
+				credibility: T::InitialCredibility::get(),
 				data: data
 					.iter()
 					.map(|input| IdentityField::from_identity_field_input(input))
@@ -628,6 +644,41 @@ pub mod pallet {
 			} else {
 				Err(<Error<T>>::DataFieldNotFound.into())
 			}
+		}
+	}
+
+	impl<T: Config> IdentitiesManager<T::AccountId> for Pallet<T> {
+		fn has_identity(account_id: &T::AccountId) -> bool {
+			<Identities<T>>::contains_key(account_id)
+		}
+
+		fn get_credibility(account_id: &T::AccountId) -> Result<Credibility, DispatchError> {
+			let identity = Self::identities(&account_id).ok_or(<Error<T>>::IdentityNotFound)?;
+			Ok(identity.credibility)
+		}
+
+		/// Increase the credibility for the identity of the identity made a good behavior.
+		fn increase_credibility(account_id: &T::AccountId, amount: Credibility) -> DispatchResult {
+			let mut identity = Self::identities(&account_id)
+				.ok_or(<Error<T>>::IdentityNotFound)?;
+
+			if identity.credibility + amount >= T::MaxCredibility::get() {
+				identity.credibility = T::MaxCredibility::get();
+			} else {
+				identity.credibility += amount;
+			}
+
+			<Identities<T>>::insert(account_id, identity);
+
+			Ok(())
+		}
+
+		/// Increase the credibility for the identity of the identity made a bad behavior.
+		fn decrease_credibility(account_id: &T::AccountId, amount: Credibility) -> DispatchResult {
+			let mut identity = Self::identities(&account_id).ok_or(<Error<T>>::IdentityNotFound)?;
+			identity.credibility -= amount;
+			<Identities<T>>::insert(account_id, identity);
+			Ok(())
 		}
 	}
 }

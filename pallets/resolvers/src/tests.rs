@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use super::*;
+use crate::pallet::ResolversNetwork as ResolversNetworkT;
 use frame_support::{assert_noop, assert_ok, traits::OffchainWorker};
 use mock::{
-	last_event, Currencies, CurrencyId, Event, ExtBuilder, Origin, ResolversNetwork, Runtime,
-	System, Timestamp, ALICE, BOB, CHARLIE, INITIAL_CREDIBILITY, UNDELEGATE_TIME,
+	last_event, Currencies, CurrencyId, Event, ExtBuilder, Identities, Origin, ResolversNetwork,
+	Runtime, System, Timestamp, ALICE, BOB, CHARLIE, INITIAL_CREDIBILITY, UNDELEGATE_TIME,
 };
 use orml_traits::MultiReservableCurrency;
-use crate::pallet::ResolversNetwork as ResolversNetworkT;
+use pallet_identities::{IdentitiesManager, IdentityType};
 
 pub const INIT_TIMESTAMP: u64 = 1_000;
 pub const BLOCK_TIME: u64 = 6_000;
@@ -24,6 +25,19 @@ fn run_to_block_number(block_number: u64) {
 fn join_resolvers_networks_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
+
+		assert_noop!(
+			ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 300),
+			Error::<Runtime>::IdentityRequired,
+		);
+
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+
 		assert_noop!(
 			ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 99),
 			Error::<Runtime>::NotMeetMinimumSelfStake
@@ -37,12 +51,14 @@ fn join_resolvers_networks_works() {
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 300));
 
 		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
-		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY);
 		assert_eq!(resolver.status, crate::ResolverStatus::Candidacy);
 		assert_eq!(resolver.self_stake, 300);
 		assert_eq!(resolver.total_stake, 300);
 		assert_eq!(resolver.delegations, [].to_vec());
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 300);
+
+		let resolver_credibility = Identities::get_credibility(&ALICE).unwrap();
+		assert_eq!(resolver_credibility, INITIAL_CREDIBILITY);
 
 		assert_eq!(
 			last_event(),
@@ -55,6 +71,12 @@ fn join_resolvers_networks_works() {
 fn delegate_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 900));
 
 		// Test delegate amount tokens that exeed the balance.
@@ -117,6 +139,12 @@ fn undelegate_works() {
 			Error::<Runtime>::ResolverNotFound,
 		);
 
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 900));
 
 		// Test undelegate without any delegations.
@@ -169,6 +197,12 @@ fn release_funds_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
 
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 500));
 		// Bob and Charlie delegate tokens.
 		assert_ok!(ResolversNetwork::delegate(Origin::signed(BOB), ALICE, 200));
@@ -212,6 +246,12 @@ fn resign_works() {
 		);
 
 		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 500));
 		assert_ok!(ResolversNetwork::delegate(Origin::signed(BOB), ALICE, 200));
 		assert_ok!(ResolversNetwork::delegate(Origin::signed(CHARLIE), ALICE, 200));
@@ -249,15 +289,25 @@ fn test_increase_resolver_credibility_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
 		// Create a active resolver.
-		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 1000));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+
 		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
 		assert_eq!(resolver.status, crate::ResolverStatus::Active);
-		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY);
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY);
 
 		// Test reduce a resolver credibility.
-		assert_ok!(ResolversNetwork::increase_credibility(ALICE, 10));
-		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
-		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY + 10);
+		assert_ok!(ResolversNetwork::increase_credibility(&ALICE, 10));
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY + 10);
 	});
 }
 
@@ -267,21 +317,30 @@ fn test_reduce_resolver_credibility_works() {
 		System::set_block_number(1);
 
 		// Test a resolver resign.
-		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 1000));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
 
 		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
 		assert_eq!(resolver.status, crate::ResolverStatus::Active);
-		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY);
-		assert_ok!(ResolversNetwork::reduce_credibility(ALICE, 10));
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY);
+		assert_ok!(ResolversNetwork::decrease_credibility(ALICE, 10));
 
 		// Test reduce a resolver credibility.
-		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
-		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY - 10);
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY - 10);
 
 		// Test a resolver will be terminated if credibility under MinimumCredibility
-		assert_ok!(ResolversNetwork::reduce_credibility(ALICE, 30));
+		assert_ok!(ResolversNetwork::decrease_credibility(ALICE, 30));
 		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
-		assert_eq!(resolver.credibility, 20);
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), 20);
 		assert_eq!(resolver.status, crate::ResolverStatus::Terminated)
 	});
 }

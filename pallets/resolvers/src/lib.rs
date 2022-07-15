@@ -67,6 +67,7 @@ pub mod pallet {
 	};
 	use frame_system::pallet_prelude::*;
 	use orml_traits::{MultiCurrency, MultiReservableCurrency};
+	use pallet_identities::IdentitiesManager;
 	use pallet_timestamp::{self as timestamp};
 	use primitives::{Credibility, CurrencyId};
 	use scale_info::TypeInfo;
@@ -80,6 +81,7 @@ pub mod pallet {
 	pub trait Config: frame_system::Config + timestamp::Config {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 		type Currency: MultiReservableCurrency<Self::AccountId, CurrencyId = CurrencyId<Self::Hash>>;
+		type IdentitiesManager: IdentitiesManager<Self::AccountId>;
 		type Randomness: Randomness<Self::Hash, Self::BlockNumber>;
 		#[pallet::constant]
 		type PenaltyTokenLockTime: Get<MomentOf<Self>>;
@@ -89,15 +91,9 @@ pub mod pallet {
 		type ActivationStakeAmount: Get<BalanceOf<Self>>;
 		#[pallet::constant]
 		type UndelegateTime: Get<MomentOf<Self>>;
+		/// The required credibility to become a resolver.
 		#[pallet::constant]
-		type InitialCredibility: Get<Credibility>;
-		// If the credibility of a resolver reaches the max level, it will not increase anymore.
-		#[pallet::constant]
-		type MaxCredibility: Get<Credibility>;
-		// If the credibility of a resolver down below the min level, the resolver will be
-		// terminated.
-		#[pallet::constant]
-		type MinCredibility: Get<Credibility>;
+		type RequiredCredibility: Get<Credibility>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
@@ -111,9 +107,9 @@ pub mod pallet {
 			selected: Vec<AccountId>,
 		) -> Result<AccountId, DispatchError>;
 
-		fn increase_credibility(resolver_id: AccountId, amount: Credibility) -> DispatchResult;
+		fn increase_credibility(resolver_id: &AccountId, amount: Credibility) -> DispatchResult;
 
-		fn reduce_credibility(resolver_id: AccountId, amount: Credibility) -> DispatchResult;
+		fn decrease_credibility(resolver_id: AccountId, amount: Credibility) -> DispatchResult;
 	}
 
 	#[derive(Clone, Encode, Decode, PartialEq, RuntimeDebug, TypeInfo)]
@@ -149,7 +145,6 @@ pub mod pallet {
 		// TODO: Considering change to HashMap for better performance.
 		pub delegations: Vec<Delegation<T>>,
 		pub total_stake: BalanceOf<T>,
-		pub credibility: Credibility,
 		pub updated_at: MomentOf<T>,
 	}
 
@@ -172,20 +167,35 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
+		/// A resolver is created.
 		ResolverCreated { account: AccountOf<T> },
+		/// A resolver is activated.
 		ResolverActivated { account: AccountOf<T> },
+		/// A resolver is inactivated.
 		ResolverInactivated { account: AccountOf<T> },
+		/// A resolver is terminated.
 		ResolverTerminated { account: AccountOf<T> },
 	}
 
 	#[pallet::error]
 	pub enum Error<T> {
+		/// Insufficient balance to do the action.
 		InsufficientBalance,
+		/// The identity is required to become resolver.
+		IdentityRequired,
+		/// The self stake have to higher than required.
+		CredibilityTooLow,
+		/// The self stake have to higher than required.
 		NotMeetMinimumSelfStake,
+		/// There is no resolver related to the account.
 		ResolverNotFound,
+		/// Their is no delegation of the account to the resolver.
 		DelegationNotFound,
+		/// The requested amount exceed the delegated amount.
 		InvalidAmount,
+		/// The origin is not a resolver.
 		NotAResolver,
+		/// There is no active resolver at the moment.
 		NoAnyActiveResolver,
 	}
 
@@ -263,7 +273,15 @@ pub mod pallet {
 			application: Vec<u8>,
 			self_stake: BalanceOf<T>,
 		) -> DispatchResult {
-			// TODO: Require identity
+			// The identity is required to join resolver networks.
+			ensure!(T::IdentitiesManager::has_identity(&sender), <Error<T>>::IdentityRequired);
+			// The identity credibility must be higher than required level to join resolver
+			// networks.
+			let resolver_credibility = T::IdentitiesManager::get_credibility(&sender)?;
+			ensure!(
+				resolver_credibility > T::RequiredCredibility::get(),
+				<Error<T>>::CredibilityTooLow
+			);
 			ensure!(self_stake >= T::MinimumSelfStake::get(), <Error<T>>::NotMeetMinimumSelfStake);
 			ensure!(
 				T::Currency::free_balance(CurrencyId::<T::Hash>::Native, &sender) >= self_stake,
@@ -279,7 +297,6 @@ pub mod pallet {
 
 			let mut resolver = Resolver::<T> {
 				application_digest,
-				credibility: T::InitialCredibility::get(),
 				status: ResolverStatus::Candidacy,
 				self_stake,
 				total_stake: self_stake,
@@ -324,8 +341,7 @@ pub mod pallet {
 					resolver.delegations[p].amount += amount;
 				},
 				None => {
-					let delegation =
-						Delegation::<T> { delegator: sender, amount };
+					let delegation = Delegation::<T> { delegator: sender, amount };
 
 					resolver.delegations.push(delegation);
 				},
@@ -369,8 +385,7 @@ pub mod pallet {
 
 					let release_at = <timestamp::Pallet<T>>::get() + T::UndelegateTime::get();
 
-					let pending_fund =
-						PendingFund::<T> { owner: sender, amount, release_at };
+					let pending_fund = PendingFund::<T> { owner: sender, amount, release_at };
 
 					<PendingFunds<T>>::mutate(|pending_funds| {
 						pending_funds.push(pending_fund);
@@ -446,11 +461,7 @@ pub mod pallet {
 			pending_funds.retain(|fund| {
 				let can_release = now >= fund.release_at;
 				if can_release {
-					T::Currency::unreserve(
-						CurrencyId::<T::Hash>::Native,
-						&fund.owner,
-						fund.amount,
-					);
+					T::Currency::unreserve(CurrencyId::<T::Hash>::Native, &fund.owner, fund.amount);
 				}
 
 				!can_release
@@ -477,32 +488,21 @@ pub mod pallet {
 		}
 
 		fn increase_credibility(
-			resolver_account: T::AccountId,
+			resolver_account_id: &T::AccountId,
 			amount: Credibility,
 		) -> DispatchResult {
-			let mut resolver =
-				Self::resolvers(&resolver_account).ok_or(<Error<T>>::NotAResolver)?;
-
-			if resolver.credibility + amount >= T::MaxCredibility::get() {
-				resolver.credibility = T::MaxCredibility::get();
-			} else {
-				resolver.credibility += amount;
-			}
-
-			<Resolvers<T>>::insert(resolver_account, resolver);
+			T::IdentitiesManager::increase_credibility(resolver_account_id, amount)?;
 			Ok(())
 		}
 
-		fn reduce_credibility(
-			resolver_account: T::AccountId,
+		fn decrease_credibility(
+			resolver_account_id: T::AccountId,
 			amount: Credibility,
 		) -> DispatchResult {
-			let mut resolver =
-				Self::resolvers(&resolver_account).ok_or(<Error<T>>::NotAResolver)?;
-			resolver.credibility -= amount;
-			<Resolvers<T>>::insert(resolver_account.clone(), resolver.clone());
-			if resolver.credibility < T::MinCredibility::get() {
-				Self::_terminate_resolver(resolver_account)?;
+			T::IdentitiesManager::decrease_credibility(&resolver_account_id, amount)?;
+			let credibility = T::IdentitiesManager::get_credibility(&resolver_account_id)?;
+			if credibility < T::RequiredCredibility::get() {
+				Self::_terminate_resolver(resolver_account_id)?;
 			}
 			Ok(())
 		}

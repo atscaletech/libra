@@ -27,6 +27,8 @@ pub const BOB: AccountId = 2;
 pub const CHARLIE: AccountId = 3;
 
 pub const EVALUATOR_BONDING: Balance = 100;
+pub const INITIAL_CREDIBILITY: Credibility = 60;
+pub const MAX_CREDIBILITY: Credibility = 100;
 
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
@@ -109,12 +111,16 @@ impl orml_currencies::Config for Runtime {
 
 parameter_types! {
 	pub const EvaluatorBonding: Balance = EVALUATOR_BONDING;
+	pub const InitialCredibility: Credibility = INITIAL_CREDIBILITY;
+	pub const MaxCredibility: Credibility = MAX_CREDIBILITY;
 }
 
 impl identities::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
 	type EvaluatorBonding = EvaluatorBonding;
+	type InitialCredibility = InitialCredibility;
+	type MaxCredibility = MaxCredibility;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;

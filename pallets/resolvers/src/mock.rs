@@ -16,6 +16,7 @@ use sp_runtime::{
 	generic,
 	traits::{BlakeTwo256, IdentityLookup},
 };
+use pallet_identities;
 
 pub type BlockNumber = u64;
 pub type AccountId = u128;
@@ -28,13 +29,15 @@ pub const ALICE: AccountId = 1;
 pub const BOB: AccountId = 2;
 pub const CHARLIE: AccountId = 3;
 
+pub const EVALUATOR_BONDING: Balance = 1000;
+pub const INITIAL_CREDIBILITY: Credibility = 60;
+pub const MAX_CREDIBILITY: Credibility = 100;
+
 pub const PENALTY_TOKEN_LOCK_TIME: Moment = 172800000;
 pub const UNDELEGATE_TIME: Moment = 172800000;
 pub const MINIMUM_SELF_STAKE: Balance = 100;
 pub const ACTIVATION_STAKE_AMOUNT: Balance = 1000;
-pub const INITIAL_CREDIBILITY: Credibility = 60;
-pub const MAX_CREDIBILITY: Credibility = 100;
-pub const MIN_CREDIBILITY: Credibility = 30;
+pub const REQUIRED_CREDIBILITY: Credibility = 30;
 
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
@@ -137,22 +140,33 @@ parameter_types! {
 	pub const UndelegateTime: Moment = UNDELEGATE_TIME;
 	pub const MinimumSelfStake: Balance = MINIMUM_SELF_STAKE;
 	pub const ActivationStakeAmount: Balance = ACTIVATION_STAKE_AMOUNT;
-	pub const InitialCredibility: Credibility = INITIAL_CREDIBILITY;
-	pub const MaxCredibility: Credibility = MAX_CREDIBILITY;
-	pub const MinCredibility: Credibility = MIN_CREDIBILITY;
+	pub const RequiredCredibility: Credibility = REQUIRED_CREDIBILITY;
 }
 
 impl resolvers_network::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
+	type IdentitiesManager = Identities;
 	type Randomness = RandomnessCollectiveFlip;
 	type PenaltyTokenLockTime = PenaltyTokenLockTime;
 	type MinimumSelfStake = MinimumSelfStake;
 	type ActivationStakeAmount = ActivationStakeAmount;
 	type UndelegateTime = UndelegateTime;
+	type RequiredCredibility = RequiredCredibility;
+}
+
+parameter_types! {
+	pub const EvaluatorBonding: Balance = EVALUATOR_BONDING;
+	pub const InitialCredibility: Credibility = INITIAL_CREDIBILITY;
+	pub const MaxCredibility: Credibility = MAX_CREDIBILITY;
+}
+
+impl pallet_identities::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type EvaluatorBonding = EvaluatorBonding;
 	type InitialCredibility = InitialCredibility;
 	type MaxCredibility = MaxCredibility;
-	type MinCredibility = MinCredibility;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
@@ -171,6 +185,7 @@ construct_runtime!(
 		Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
 		Currencies: orml_currencies::{Pallet, Call, Event<T>},
 		ResolversNetwork: resolvers_network::{Pallet, Call, Storage, Event<T>},
+		Identities: pallet_identities::{Pallet, Call, Storage, Event<T>},
 	}
 );
 
