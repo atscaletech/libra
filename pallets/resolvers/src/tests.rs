@@ -2,20 +2,31 @@
 
 use super::*;
 use crate::pallet::ResolversNetwork as ResolversNetworkT;
-use frame_support::{assert_noop, assert_ok, traits::OffchainWorker};
+use frame_support::{assert_noop, assert_ok, traits::Hooks};
+use frame_system as system;
 use mock::{
-	last_event, Currencies, CurrencyId, Event, ExtBuilder, Identities, Origin, ResolversNetwork,
-	Runtime, System, Timestamp, ALICE, BOB, CHARLIE, INITIAL_CREDIBILITY, UNDELEGATE_TIME,
+	last_event, Currencies, CurrencyId, Event, ExtBuilder, Identities, Origin,
+	RandomnessCollectiveFlip, ResolversNetwork, Runtime, System, Timestamp, ALICE, BOB, CHARLIE,
+	INITIAL_CREDIBILITY, UNDELEGATE_TIME,
 };
 use orml_traits::MultiReservableCurrency;
 use pallet_identities::{IdentitiesManager, IdentityType};
+use sp_runtime::traits::{Hash, Header};
 
 pub const INIT_TIMESTAMP: u64 = 1_000;
 pub const BLOCK_TIME: u64 = 6_000;
 
 fn run_to_block_number(block_number: u64) {
-	while System::block_number() < block_number {
-		System::set_block_number(System::block_number() + 1);
+	let mut parent_hash = System::parent_hash();
+
+	for i in System::block_number()..(System::block_number() + block_number + 1) {
+		System::reset_events();
+		System::initialize(&i, &parent_hash, &Default::default());
+		RandomnessCollectiveFlip::on_initialize(i);
+
+		let header = System::finalize();
+		parent_hash = header.hash();
+		System::set_block_number(*header.number());
 		Timestamp::set_timestamp((System::block_number() as u64 * BLOCK_TIME) + INIT_TIMESTAMP);
 		ResolversNetwork::offchain_worker(System::block_number());
 	}
@@ -342,5 +353,58 @@ fn test_reduce_resolver_credibility_works() {
 		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
 		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), 20);
 		assert_eq!(resolver.status, crate::ResolverStatus::Terminated)
+	});
+}
+
+#[test]
+fn get_random_resolver_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(BOB),
+			"BOB".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(BOB), "".into(), 1000));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(CHARLIE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(CHARLIE),
+			"".into(),
+			1000
+		));
+
+		run_to_block_number(32);
+
+		let resolver1 = ResolversNetwork::get_resolver(
+			<Runtime as system::Config>::Hashing::hash_of(&"payment1".as_bytes()),
+			[].into(),
+		)
+		.unwrap();
+
+		let resolver2 = ResolversNetwork::get_resolver(
+			<Runtime as system::Config>::Hashing::hash_of(&"payment2".as_bytes()),
+			[].into(),
+		)
+		.unwrap();
+
+		assert_ne!(resolver1, resolver2);
 	});
 }
