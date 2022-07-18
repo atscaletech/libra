@@ -10,6 +10,7 @@ use frame_system as system;
 use orml_currencies::BasicCurrencyAdapter;
 use orml_traits::parameter_type_with_key;
 pub use pallet_balances::Call as BalancesCall;
+use pallet_identities;
 use pallet_lrp;
 use pallet_resolvers;
 use pallet_timestamp::{self as timestamp};
@@ -18,7 +19,6 @@ use sp_runtime::{
 	generic,
 	traits::{BlakeTwo256, IdentityLookup},
 };
-use pallet_identities;
 
 pub type BlockNumber = u64;
 pub type AccountId = u128;
@@ -35,7 +35,7 @@ pub const RESOLVER_2: AccountId = 5;
 pub const RESOLVER_3: AccountId = 6;
 
 pub const PENDING_PAYMENT_WAITING_TIME: Moment = 172800000;
-pub const FULL_FILLED_WAITING_TIME: Moment = 2592000000;
+pub const FULFILLED_WAITING_TIME: Moment = 2592000000;
 
 // Identities pallet config
 pub const EVALUATOR_BONDING: Balance = 1000;
@@ -52,6 +52,8 @@ pub const REQUIRED_CREDIBILITY: Credibility = 30;
 // pub const DISPUTE_FINALIZING_TIME: Moment = 2592000000;
 pub const DISPUTE_FINALIZING_TIME: Moment = 10_000;
 pub const DISPUTE_FEE: Balance = 100;
+pub const CREDIBILITY_GAIN: Credibility = 1;
+pub const CREDIBILITY_LOSS: Credibility = 10;
 
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
@@ -157,7 +159,7 @@ impl currencies_registry::Config for Runtime {
 
 parameter_types! {
 	pub const PendingPaymentWaitingTime: Moment = PENDING_PAYMENT_WAITING_TIME;
-	pub const FullFilledPaymentWaitingTime: Moment = FULL_FILLED_WAITING_TIME;
+	pub const FulfilledPaymentWaitingTime: Moment = FULFILLED_WAITING_TIME;
 }
 
 impl pallet_lrp::Config for Runtime {
@@ -165,7 +167,7 @@ impl pallet_lrp::Config for Runtime {
 	type Currency = Currencies;
 	type CurrenciesManager = CurrenciesRegistry;
 	type PendingPaymentWaitingTime = PendingPaymentWaitingTime;
-	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
+	type FulfilledPaymentWaitingTime = FulfilledPaymentWaitingTime;
 }
 
 parameter_types! {
@@ -191,6 +193,8 @@ impl pallet_resolvers::Config for Runtime {
 parameter_types! {
 	pub const DisputeFinalizingTime: Moment = DISPUTE_FINALIZING_TIME;
 	pub const DisputeFee: Balance = DISPUTE_FEE;
+	pub const CredibilityGain: Credibility = CREDIBILITY_GAIN;
+	pub const CredibilityLoss: Credibility = CREDIBILITY_LOSS;
 }
 
 impl dispute_resolution::Config for Runtime {
@@ -198,8 +202,11 @@ impl dispute_resolution::Config for Runtime {
 	type Currency = Currencies;
 	type PaymentProtocol = LRP;
 	type ResolversNetwork = ResolversNetwork;
+	type IdentitiesManager = Identities;
 	type DisputeFinalizingTime = DisputeFinalizingTime;
 	type DisputeFee = DisputeFee;
+	type CredibilityGain = CredibilityGain;
+	type CredibilityLoss = CredibilityLoss;
 }
 
 parameter_types! {
@@ -274,4 +281,3 @@ impl ExtBuilder {
 		t.into()
 	}
 }
-

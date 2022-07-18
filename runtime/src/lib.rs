@@ -317,7 +317,7 @@ impl pallet_lrp::Config for Runtime {
 	type Currency = Currencies;
 	type CurrenciesManager = CurrenciesRegistry;
 	type PendingPaymentWaitingTime = PendingPaymentWaitingTime;
-	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
+	type FulfilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
 }
 
 parameter_types! {
@@ -325,27 +325,27 @@ parameter_types! {
 	pub const UndelegateTime: Moment = 2592000000; // 30 days
 	pub const MinimumSelfStake: Balance = 10_000_000_000_000_000;
 	pub const ActivationStakeAmount: Balance = 100_000_000_000_000_000;
-	pub const InitialCredibility: Credibility = 60;
-	pub const MaxCredibility: Credibility = 100;
-	pub const MinCredibility: Credibility = 30;
+	pub const RequiredCredibility: Credibility = 40;
 }
 
 impl pallet_resolvers::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
+	type IdentitiesManager = Identities;
 	type Randomness = RandomnessCollectiveFlip;
 	type PenaltyTokenLockTime = PenaltyTokenLockTime;
 	type MinimumSelfStake = MinimumSelfStake;
 	type ActivationStakeAmount = ActivationStakeAmount;
 	type UndelegateTime = UndelegateTime;
-	type InitialCredibility = InitialCredibility;
-	type MaxCredibility = MaxCredibility;
-	type MinCredibility = MinCredibility;
+	type RequiredCredibility = RequiredCredibility;
 }
 
 parameter_types! {
 	pub const DisputeFinalizingTime: Moment = 604800000; // 7 days
 	pub const DisputeFee: Balance = 50_000_000_000_000;
+	// Tolerance = CredibilityGain / CredibilityLoss
+	pub const CredibilityGain: Credibility = 1;
+	pub const CredibilityLoss: Credibility = 5;
 }
 
 impl dispute_resolution::Config for Runtime {
@@ -353,18 +353,25 @@ impl dispute_resolution::Config for Runtime {
 	type Currency = Currencies;
 	type PaymentProtocol = Lrp;
 	type ResolversNetwork = ResolversNetwork;
+	type IdentitiesManager = Identities;
 	type DisputeFinalizingTime = DisputeFinalizingTime;
 	type DisputeFee = DisputeFee;
+	type CredibilityGain = CredibilityGain;
+	type CredibilityLoss = CredibilityLoss;
 }
 
 parameter_types! {
 	pub const EvaluatorBonding: Balance = 50_000_000_000_000;
+	pub const InitialCredibility: Credibility = 60;
+	pub const MaxCredibility: Credibility = 100;
 }
 
 impl pallet_identities::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
 	type EvaluatorBonding = EvaluatorBonding;
+	type InitialCredibility = InitialCredibility;
+	type MaxCredibility = MaxCredibility;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.

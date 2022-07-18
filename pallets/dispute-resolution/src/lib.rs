@@ -42,10 +42,11 @@ pub mod pallet {
 	};
 	use frame_system::pallet_prelude::*;
 	use orml_traits::{MultiCurrency, MultiReservableCurrency};
+	use pallet_identities::IdentitiesManager;
 	use pallet_lrp::PaymentProtocol;
 	use pallet_resolvers::ResolversNetwork;
 	use pallet_timestamp::{self as timestamp};
-	use primitives::CurrencyId;
+	use primitives::{Credibility, CurrencyId};
 	use scale_info::TypeInfo;
 	use sp_io::offchain_index;
 	use sp_runtime::{RuntimeDebug, SaturatedConversion};
@@ -59,10 +60,15 @@ pub mod pallet {
 		type Currency: MultiReservableCurrency<Self::AccountId, CurrencyId = CurrencyId<Self::Hash>>;
 		type PaymentProtocol: PaymentProtocol<Self::Hash, Self::AccountId, BalanceOf<Self>>;
 		type ResolversNetwork: ResolversNetwork<Self::AccountId, Self::Hash>;
+		type IdentitiesManager: IdentitiesManager<Self::AccountId>;
 		#[pallet::constant]
 		type DisputeFinalizingTime: Get<MomentOf<Self>>;
 		#[pallet::constant]
 		type DisputeFee: Get<BalanceOf<Self>>;
+		#[pallet::constant]
+		type CredibilityGain: Get<Credibility>;
+		#[pallet::constant]
+		type CredibilityLoss: Get<Credibility>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
@@ -301,10 +307,8 @@ pub mod pallet {
 			Self::_lock_resolvers_fee(&who, dispute.fee)?;
 
 			for _i in 0..number_of_resolver {
-				let resolver = T::ResolversNetwork::get_resolver(
-					payment_hash,
-					dispute.resolvers.clone(),
-				)?;
+				let resolver =
+					T::ResolversNetwork::get_resolver(payment_hash, dispute.resolvers.clone())?;
 				dispute.resolvers.push(resolver);
 			}
 
@@ -348,7 +352,7 @@ pub mod pallet {
 		fn _propose_outcome(
 			who: AccountOf<T>,
 			payment_hash: HashOf<T>,
-			judment: Judgment,
+			judgment: Judgment,
 		) -> DispatchResult {
 			let mut dispute = Self::disputes(&payment_hash).ok_or(<Error<T>>::DisputeNotFound)?;
 
@@ -357,9 +361,9 @@ pub mod pallet {
 			// Ensure selected resolver can give decision once.
 			ensure!(!dispute.judgments.iter().any(|i| i.0 == who), <Error<T>>::AccessDenied);
 
-			dispute.judgments.push((who, judment));
+			dispute.judgments.push((who, judgment));
 
-			// The dispute will be concluded if get enough judgements from resolvers.
+			// The dispute will be concluded if get enough judgments from resolvers.
 			if dispute.resolvers.len() == dispute.judgments.len() {
 				let mut transcript = Transcript { release_to_payer: 0, release_to_payee: 0 };
 
@@ -442,21 +446,64 @@ pub mod pallet {
 					match dispute.outcome {
 						Judgment::ReleaseFundToPayee => {
 							T::Currency::unreserve(currency_id, &payer, amount);
-							T::Currency::transfer(
-								currency_id,
-								&payer,
-								&payee,
-								amount,
-							)?;
+							T::Currency::transfer(currency_id, &payer, &payee, amount)?;
 							Self::_release_resolvers_fee(&payee, dispute.fee);
 							Self::_distribute_resolvers_fee(&payer, dispute.resolvers.clone())?;
+
+							if T::IdentitiesManager::has_identity(&payee) {
+								T::IdentitiesManager::increase_credibility(
+									&payee,
+									T::CredibilityGain::get(),
+								)?;
+							}
+
+							if T::IdentitiesManager::has_identity(&payer) {
+								T::IdentitiesManager::decrease_credibility(
+									&payer,
+									T::CredibilityLoss::get(),
+								)?;
+							}
 						},
 						Judgment::ReleaseFundToPayer => {
 							T::Currency::unreserve(currency_id, &payer, amount);
 							Self::_release_resolvers_fee(&payer, dispute.fee);
 							Self::_distribute_resolvers_fee(&payee, dispute.resolvers.clone())?;
+
+							// Only decrease credibility of payee and increase credibility if the
+							// payee fight dispute and lose.
+							if !dispute.resolvers.is_empty() {
+								if T::IdentitiesManager::has_identity(&payee) {
+									T::IdentitiesManager::decrease_credibility(
+										&payee,
+										T::CredibilityLoss::get(),
+									)?;
+								}
+								if T::IdentitiesManager::has_identity(&payer) {
+									T::IdentitiesManager::increase_credibility(
+										&payer,
+										T::CredibilityGain::get(),
+									)?;
+								}
+							}
 						},
 					}
+
+					for (resolver, judgment) in dispute.judgments.clone() {
+						// Increase credibility for the resolver who make the correct judgment.
+						if judgment == dispute.outcome {
+							T::ResolversNetwork::increase_credibility(
+								&resolver,
+								T::CredibilityGain::get(),
+							)?;
+						} else {
+							// Decrease credibility for the resolver who make the correct judgment.
+							T::ResolversNetwork::decrease_credibility(
+								resolver.clone(),
+								T::CredibilityLoss::get(),
+							)?;
+						}
+					}
+
 					dispute.status = DisputeStatus::Resolved;
 
 					<Disputes<T>>::insert(&hash, dispute);
