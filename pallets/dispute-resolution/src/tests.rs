@@ -4,7 +4,7 @@ use super::*;
 use frame_support::{assert_noop, assert_ok, traits::OffchainWorker};
 use mock::{
 	Currencies, CurrencyId, DisputeResolution, ExtBuilder, Origin,
-	ResolversNetwork, Runtime, System, Timestamp, ALICE, BOB, DISPUTE_FINALIZING_TIME, LRP, RESOLVER_1, RESOLVER_2,
+	ResolversNetwork, Identities, Runtime, System, Timestamp, ALICE, BOB, DISPUTE_FINALIZING_TIME, LRP, RESOLVER_1, RESOLVER_2,
 	RESOLVER_3,
 };
 use orml_traits::{MultiCurrency, MultiReservableCurrency};
@@ -73,6 +73,12 @@ fn fight_dispute_works() {
 		System::set_block_number(1);
 
 		// Initial resolvers network.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(RESOLVER_1),
+			"Resolver 1".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(
 			Origin::signed(RESOLVER_1),
 			"".into(),
@@ -115,6 +121,12 @@ fn propose_jugdment_works() {
 		System::set_block_number(1);
 
 		// Initial resolvers network.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(RESOLVER_1),
+			"Resolver 1".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(
 			Origin::signed(RESOLVER_1),
 			"".into(),
@@ -159,6 +171,12 @@ fn escalate_dispute_works() {
 		System::set_block_number(1);
 
 		// Initial resolvers network.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(
 			Origin::signed(RESOLVER_1),
 			"".into(),
@@ -201,15 +219,33 @@ fn fight_an_escalated_dispute_works() {
 		System::set_block_number(1);
 
 		// Initial resolvers network.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(RESOLVER_1),
+			"Resolver 1".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(
 			Origin::signed(RESOLVER_1),
 			"".into(),
 			1100,
 		));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(RESOLVER_2),
+			"Resolver 2".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(
 			Origin::signed(RESOLVER_2),
 			"".into(),
 			1100,
+		));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(RESOLVER_3),
+			"Resolver 3".into(),
+			IdentityType::Individual,
+			[].into(),
 		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(
 			Origin::signed(RESOLVER_3),
@@ -271,7 +307,7 @@ fn fight_an_escalated_dispute_works() {
 }
 
 #[test]
-fn finalize_judment_works() {
+fn finalize_judgment_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
 

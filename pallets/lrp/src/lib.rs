@@ -29,7 +29,7 @@
 //! The payer can cancel pending payments. Once they are accepted, they just can be canceled by the
 //! payee. The locked fund of the payer will be released if payment is canceled.
 //!
-//! - `full_fill_payment` - Full fill a payment.
+//! - `fulfill_payment` - Fulfill a payment.
 //!
 //! After delivery of the promise, the payee can mark the payment as full filled. A full filled
 //! payment will auto-complete by an off-chain worker after a while if there is no dispute.
@@ -47,7 +47,7 @@
 //! - PaymentRejected - A payment is rejected by payee.
 //! - PaymentExpired - A payment is not accepted or rejected by the payee after the pending period.
 //! - PaymentCancelled - A payment is canceled by the payer or payee.
-//! - PaymentFullFilled - A payment is marked as full-filled by the payee.
+//! - PaymentFulfilled - A payment is marked as full-filled by the payee.
 //! - PaymentCompleted - A payment is marked as completed by the payer or autocomplete by the
 //!   off-chain worker.
 
@@ -90,7 +90,7 @@ pub mod pallet {
 		#[pallet::constant]
 		type PendingPaymentWaitingTime: Get<MomentOf<Self>>;
 		#[pallet::constant]
-		type FullFilledPaymentWaitingTime: Get<MomentOf<Self>>;
+		type FulfilledPaymentWaitingTime: Get<MomentOf<Self>>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
@@ -115,7 +115,7 @@ pub mod pallet {
 		Accepted,
 		Rejected,
 		Expired,
-		FullFilled,
+		Fulfilled,
 		Disputed,
 		Cancelled,
 		Completed,
@@ -153,7 +153,7 @@ pub mod pallet {
 		StorageValue<_, Vec<PaymentHashOf<T>>, ValueQuery>;
 
 	#[pallet::storage]
-	pub(super) type FullFilledPaymentHashes<T: Config> =
+	pub(super) type FulfilledPaymentHashes<T: Config> =
 		StorageValue<_, Vec<PaymentHashOf<T>>, ValueQuery>;
 
 	#[pallet::storage]
@@ -192,7 +192,7 @@ pub mod pallet {
 			currency_id: CurrencyId<T::Hash>,
 			amount: BalanceOf<T>,
 		},
-		PaymentFullFilled {
+		PaymentFulfilled {
 			payment_hash: PaymentHashOf<T>,
 			payer: AccountOf<T>,
 			payee: AccountOf<T>,
@@ -313,12 +313,12 @@ pub mod pallet {
 		}
 
 		#[pallet::weight(1_000)]
-		pub fn full_fill_payment(
+		pub fn fulfill_payment(
 			origin: OriginFor<T>,
 			payment_hash: PaymentHashOf<T>,
 		) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
-			Self::do_full_fill_payment(sender, payment_hash)?;
+			Self::do_fulfill_payment(sender, payment_hash)?;
 			Ok(())
 		}
 
@@ -355,7 +355,7 @@ pub mod pallet {
 		}
 
 		fn evaluate_full_filled_payments() -> DispatchResult {
-			let full_filled_payment_hashes = <FullFilledPaymentHashes<T>>::get();
+			let full_filled_payment_hashes = <FulfilledPaymentHashes<T>>::get();
 
 			if full_filled_payment_hashes.is_empty() {
 				return Ok(())
@@ -574,7 +574,7 @@ pub mod pallet {
 			Ok(())
 		}
 
-		fn do_full_fill_payment(
+		fn do_fulfill_payment(
 			sender: AccountOf<T>,
 			payment_hash: PaymentHashOf<T>,
 		) -> DispatchResult {
@@ -583,13 +583,13 @@ pub mod pallet {
 			ensure!(sender == payment.payee, <Error<T>>::AccessDenied);
 			ensure!(payment.status == PaymentStatus::Accepted, <Error<T>>::InvalidStatusChange);
 
-			Self::do_update_payment(sender, payment_hash, PaymentStatus::FullFilled)?;
+			Self::do_update_payment(sender, payment_hash, PaymentStatus::Fulfilled)?;
 
-			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
+			<FulfilledPaymentHashes<T>>::mutate(|payment_hashes| {
 				payment_hashes.push(payment_hash)
 			});
 
-			Self::deposit_event(Event::PaymentFullFilled {
+			Self::deposit_event(Event::PaymentFulfilled {
 				payment_hash,
 				payer: payment.payer,
 				payee: payment.payee,
@@ -604,7 +604,7 @@ pub mod pallet {
 			let payment = Self::payments(&payment_hash).ok_or(<Error<T>>::PaymentNotFound)?;
 			let now = <timestamp::Pallet<T>>::get();
 
-			let expired_time = payment.updated_at + T::FullFilledPaymentWaitingTime::get();
+			let expired_time = payment.updated_at + T::FulfilledPaymentWaitingTime::get();
 
 			if expired_time < now {
 				return Ok(())
@@ -625,7 +625,7 @@ pub mod pallet {
 
 			Self::do_update_payment(payment.updated_by, payment_hash, PaymentStatus::Completed)?;
 
-			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
+			<FulfilledPaymentHashes<T>>::mutate(|payment_hashes| {
 				payment_hashes.retain(|&hash| hash != payment_hash)
 			});
 
@@ -651,7 +651,7 @@ pub mod pallet {
 					sender == payment.payer || sender == payment.payee,
 					<Error<T>>::AccessDenied
 				),
-				PaymentStatus::FullFilled => ensure!(
+				PaymentStatus::Fulfilled => ensure!(
 					sender == payment.payer || sender == payment.payee,
 					<Error<T>>::AccessDenied
 				),
@@ -676,7 +676,7 @@ pub mod pallet {
 		) -> DispatchResult {
 			let payment = Self::payments(&payment_hash).ok_or(<Error<T>>::PaymentNotFound)?;
 			ensure!(sender == payment.payer, <Error<T>>::AccessDenied);
-			ensure!(payment.status == PaymentStatus::FullFilled, <Error<T>>::InvalidStatusChange);
+			ensure!(payment.status == PaymentStatus::Fulfilled, <Error<T>>::InvalidStatusChange);
 
 			T::Currency::unreserve(
 				payment.currency_id,
@@ -693,7 +693,7 @@ pub mod pallet {
 
 			Self::do_update_payment(sender, payment_hash, PaymentStatus::Completed)?;
 
-			<FullFilledPaymentHashes<T>>::mutate(|payment_hashes| {
+			<FulfilledPaymentHashes<T>>::mutate(|payment_hashes| {
 				payment_hashes.retain(|&hash| hash != payment_hash)
 			});
 
@@ -723,7 +723,7 @@ pub mod pallet {
 			let payment = Self::payments(hash);
 
 			if let Some(payment) = payment {
-				return payment.status == PaymentStatus::FullFilled || payment.status == PaymentStatus::Accepted
+				return payment.status == PaymentStatus::Fulfilled || payment.status == PaymentStatus::Accepted
 			}
 
 			false

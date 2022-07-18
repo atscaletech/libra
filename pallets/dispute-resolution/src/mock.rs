@@ -18,6 +18,7 @@ use sp_runtime::{
 	generic,
 	traits::{BlakeTwo256, IdentityLookup},
 };
+use pallet_identities;
 
 pub type BlockNumber = u64;
 pub type AccountId = u128;
@@ -36,13 +37,17 @@ pub const RESOLVER_3: AccountId = 6;
 pub const PENDING_PAYMENT_WAITING_TIME: Moment = 172800000;
 pub const FULL_FILLED_WAITING_TIME: Moment = 2592000000;
 
+// Identities pallet config
+pub const EVALUATOR_BONDING: Balance = 1000;
+pub const INITIAL_CREDIBILITY: Credibility = 60;
+pub const MAX_CREDIBILITY: Credibility = 100;
+
+// Resolvers network config
 pub const PENALTY_TOKEN_LOCK_TIME: Moment = 172800000;
 pub const UNDELEGATE_TIME: Moment = 172800000;
 pub const MINIMUM_SELF_STAKE: Balance = 100;
 pub const ACTIVATION_STAKE_AMOUNT: Balance = 1000;
-pub const INITIAL_CREDIBILITY: Credibility = 60;
-pub const MAX_CREDIBILITY: Credibility = 100;
-pub const MIN_CREDIBILITY: Credibility = 30;
+pub const REQUIRED_CREDIBILITY: Credibility = 30;
 
 // pub const DISPUTE_FINALIZING_TIME: Moment = 2592000000;
 pub const DISPUTE_FINALIZING_TIME: Moment = 10_000;
@@ -168,22 +173,19 @@ parameter_types! {
 	pub const UndelegateTime: Moment = UNDELEGATE_TIME;
 	pub const MinimumSelfStake: Balance = MINIMUM_SELF_STAKE;
 	pub const ActivationStakeAmount: Balance = ACTIVATION_STAKE_AMOUNT;
-	pub const InitialCredibility: Credibility = INITIAL_CREDIBILITY;
-	pub const MaxCredibility: Credibility = MAX_CREDIBILITY;
-	pub const MinCredibility: Credibility = MIN_CREDIBILITY;
+	pub const RequiredCredibility: Credibility = REQUIRED_CREDIBILITY;
 }
 
 impl pallet_resolvers::Config for Runtime {
 	type Event = Event;
 	type Currency = Currencies;
+	type IdentitiesManager = Identities;
 	type Randomness = RandomnessCollectiveFlip;
 	type PenaltyTokenLockTime = PenaltyTokenLockTime;
 	type MinimumSelfStake = MinimumSelfStake;
 	type ActivationStakeAmount = ActivationStakeAmount;
 	type UndelegateTime = UndelegateTime;
-	type InitialCredibility = InitialCredibility;
-	type MaxCredibility = MaxCredibility;
-	type MinCredibility = MinCredibility;
+	type RequiredCredibility = RequiredCredibility;
 }
 
 parameter_types! {
@@ -198,6 +200,20 @@ impl dispute_resolution::Config for Runtime {
 	type ResolversNetwork = ResolversNetwork;
 	type DisputeFinalizingTime = DisputeFinalizingTime;
 	type DisputeFee = DisputeFee;
+}
+
+parameter_types! {
+	pub const EvaluatorBonding: Balance = EVALUATOR_BONDING;
+	pub const InitialCredibility: Credibility = INITIAL_CREDIBILITY;
+	pub const MaxCredibility: Credibility = MAX_CREDIBILITY;
+}
+
+impl pallet_identities::Config for Runtime {
+	type Event = Event;
+	type Currency = Currencies;
+	type EvaluatorBonding = EvaluatorBonding;
+	type InitialCredibility = InitialCredibility;
+	type MaxCredibility = MaxCredibility;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
@@ -216,6 +232,7 @@ construct_runtime!(
 		Tokens: orml_tokens::{Pallet, Storage, Event<T>, Config<T>},
 		Currencies: orml_currencies::{Pallet, Call, Event<T>},
 		CurrenciesRegistry: currencies_registry::{Pallet, Call, Storage, Event<T>},
+		Identities: pallet_identities::{Pallet, Call, Storage, Event<T>},
 		ResolversNetwork: pallet_resolvers::{Pallet, Call, Storage, Event<T>},
 		LRP: pallet_lrp::{Pallet, Call, Storage, Event<T>},
 		DisputeResolution: dispute_resolution::{Pallet, Call, Storage, Event<T>},

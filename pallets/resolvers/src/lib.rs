@@ -131,8 +131,11 @@ pub mod pallet {
 	#[scale_info(skip_type_params(T))]
 	#[cfg_attr(feature = "std", derive(Serialize, Deserialize))]
 	pub enum ResolverStatus {
+		/// Resolver joined to the resolver networks but not active.
 		Candidacy,
+		/// A candidacy resolver become a active resolver.
 		Active,
+		/// A resolver terminated.
 		Terminated,
 	}
 

@@ -29,7 +29,7 @@ pub const BOB: AccountId = 2;
 pub const CHARLIE: AccountId = 3;
 
 pub const PENDING_PAYMENT_WAITING_TIME: Moment = 172800000;
-pub const FULL_FILLED_WAITING_TIME: Moment = 2592000000;
+pub const FULFILLED_WAITING_TIME: Moment = 2592000000;
 
 parameter_types! {
 	pub const BlockHashCount: u64 = 250;
@@ -133,7 +133,7 @@ impl currencies_registry::Config for Runtime {
 
 parameter_types! {
 	pub const PendingPaymentWaitingTime: Moment = PENDING_PAYMENT_WAITING_TIME;
-	pub const FullFilledPaymentWaitingTime: Moment = FULL_FILLED_WAITING_TIME;
+	pub const FulfilledPaymentWaitingTime: Moment = FULFILLED_WAITING_TIME;
 }
 
 impl pallet_lrp::Config for Runtime {
@@ -141,7 +141,7 @@ impl pallet_lrp::Config for Runtime {
 	type Currency = Currencies;
 	type CurrenciesManager = CurrenciesRegistry;
 	type PendingPaymentWaitingTime = PendingPaymentWaitingTime;
-	type FullFilledPaymentWaitingTime = FullFilledPaymentWaitingTime;
+	type FulfilledPaymentWaitingTime = FulfilledPaymentWaitingTime;
 }
 
 type UncheckedExtrinsic = frame_system::mocking::MockUncheckedExtrinsic<Runtime>;
