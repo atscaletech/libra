@@ -1,25 +1,25 @@
 //! # Dispute Resolution
+//! - [`Config`]
+//! - [`Call`]
+//! - [`Event`]
+//! - [`Error`]
 //!
+//! #Overview
 //! Dispute resolution is on-chain dispute resolving process to help resolve conflicts between
 //! payment parties.
 //!
-//! ## Usage
+//! # Usage
 //!
+//! ## For payer or payee
 //! - `create_dispute` - Create an on-chain dispute to request refund. If the payee does not fight
 //!   against the dispute, the refund will be execute after `DisputeFinalizingTime`.
 //! - `fight_dispute` - Payee can fight against a dispute if make sure that invalid.
-//! - `escalate_dispute` - If a party does not satisfied with the dispute result, they can escalate
-//!   the dispute to more resolvers. Although there is no limit the escalate time, but the fee will
+//! - `escalate_dispute` - If a party is unsatisfied with the dispute result, they can escalate the
+//!   dispute to more resolvers. Although there is no limit the escalate time, but the fee will
 //!   increase follow the number of resolvers that involved to dispute case.
-//! - propose_outcome - Selected resolvers make judgment after evaluation the argument.
-//!
-//! ## Events
-//!
-//! - DisputeCreated - A `payer` issue a dispute for a payment.
-//! - DisputeFought - A `payee` fight against a dispute case.
-//! - DisputeEscalated - `payer` or `payee` escalate a dispute to more resolvers.
-//! - DisputeFinalized - A dispute is finalized after `DisputeFinalizingTime`. Once the dispute is
-//!   resolved, there is no way to recover.
+//! ## For selected resolvers
+//! - `propose_outcome` - Propose the judgment after carefully evaluate the arguments and evidence
+//!   from both sides.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -61,12 +61,19 @@ pub mod pallet {
 		type PaymentProtocol: PaymentProtocol<Self::Hash, Self::AccountId, BalanceOf<Self>>;
 		type ResolversNetwork: ResolversNetwork<Self::AccountId, Self::Hash>;
 		type IdentitiesManager: IdentitiesManager<Self::AccountId>;
+		/// The finalizing dispute will be finalized after `DisputeFinalizingTime`. No more actions
+		/// can take with the payment after that.
 		#[pallet::constant]
 		type DisputeFinalizingTime: Get<MomentOf<Self>>;
+		/// Fee need to pay for each selected resolver
 		#[pallet::constant]
 		type DisputeFee: Get<BalanceOf<Self>>;
+		/// The amount credibility payer, payee or resolver (who win the dispute) gain after a
+		/// dispute is resolved
 		#[pallet::constant]
 		type CredibilityGain: Get<Credibility>;
+		/// The amount credibility payer, payee or resolver (who lose the dispute) loss after a
+		/// dispute is resolved
 		#[pallet::constant]
 		type CredibilityLoss: Get<Credibility>;
 	}
@@ -138,21 +145,13 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		DisputeCreated {
-			payer: AccountOf<T>,
-			payee: AccountOf<T>,
-			payment_hash: HashOf<T>,
-		},
-		DisputeFought {
-			payer: AccountOf<T>,
-			payee: AccountOf<T>,
-			payment_hash: HashOf<T>,
-		},
-		DisputeEscalated {
-			payer: AccountOf<T>,
-			payee: AccountOf<T>,
-			payment_hash: HashOf<T>,
-		},
+		/// A dispute is issued by payer
+		DisputeCreated { payer: AccountOf<T>, payee: AccountOf<T>, payment_hash: HashOf<T> },
+		/// A dispute is fought by payer or payee to against the outcome
+		DisputeFought { payer: AccountOf<T>, payee: AccountOf<T>, payment_hash: HashOf<T> },
+		/// A party unsatisfied with the outcome of resolver(s) and open to escalate dispute
+		DisputeEscalated { payer: AccountOf<T>, payee: AccountOf<T>, payment_hash: HashOf<T> },
+		/// A dispute is finalized with the outcome after finalizing time
 		DisputeResolved {
 			payment_hash: HashOf<T>,
 			payer: AccountOf<T>,
@@ -164,10 +163,15 @@ pub mod pallet {
 
 	#[pallet::error]
 	pub enum Error<T> {
+		/// The origin does not have appropriate access rights
 		AccessDenied,
+		/// The state of the payment is not allow to dispute
 		DisputeNotAccepted,
+		/// Their is no dispute related with the payment hash
 		DisputeNotFound,
+		/// Only finalizing dispute can be fight or escalate
 		ActionForOnlyFinalizingDispute,
+		/// The balance is not enough to pay the fee
 		InsufficientBalance,
 	}
 
