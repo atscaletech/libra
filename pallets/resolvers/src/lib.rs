@@ -164,6 +164,10 @@ pub mod pallet {
 	pub(super) type ActiveResolvers<T: Config> = StorageValue<_, Vec<AccountOf<T>>, ValueQuery>;
 
 	#[pallet::storage]
+	#[pallet::getter(fn blacklisted_accounts)]
+	pub(super) type BlacklistedAccounts<T: Config> = StorageValue<_, Vec<AccountOf<T>>, ValueQuery>;
+
+	#[pallet::storage]
 	#[pallet::getter(fn pending_funds)]
 	pub(super) type PendingFunds<T: Config> = StorageValue<_, Vec<PendingFund<T>>, ValueQuery>;
 
@@ -186,6 +190,8 @@ pub mod pallet {
 		InsufficientBalance,
 		/// The identity is required to become resolver.
 		IdentityRequired,
+		/// The account is banned to join the resolvers network.
+		AccountIsBlacklisted,
 		/// The self stake have to higher than required.
 		CredibilityTooLow,
 		/// The self stake have to higher than required.
@@ -260,7 +266,7 @@ pub mod pallet {
 		#[pallet::weight(1_000)]
 		pub fn resign(origin: OriginFor<T>) -> DispatchResult {
 			let sender = ensure_signed(origin)?;
-			Self::_terminate_resolver(sender)?;
+			Self::_terminate_resolver(sender, false)?;
 			Ok(())
 		}
 	}
@@ -276,6 +282,8 @@ pub mod pallet {
 			application: Vec<u8>,
 			self_stake: BalanceOf<T>,
 		) -> DispatchResult {
+			// The blacklisted account cannot join the network.
+			ensure!(!<ActiveResolvers<T>>::get().contains(&sender), <Error<T>>::AccountIsBlacklisted);
 			// The identity is required to join resolver networks.
 			ensure!(T::IdentitiesManager::has_identity(&sender), <Error<T>>::IdentityRequired);
 			// The identity credibility must be higher than required level to join resolver
@@ -411,11 +419,19 @@ pub mod pallet {
 			Ok(())
 		}
 
-		fn _terminate_resolver(resolver_account: AccountOf<T>) -> DispatchResult {
+		fn _terminate_resolver(
+			resolver_account: AccountOf<T>,
+			has_penalty: bool,
+		) -> DispatchResult {
 			let mut resolver =
 				Self::resolvers(&resolver_account).ok_or(<Error<T>>::NotAResolver)?;
 
-			let release_at = <timestamp::Pallet<T>>::get() + T::UndelegateTime::get();
+			let release_at = if has_penalty {
+				<timestamp::Pallet<T>>::get() + T::PenaltyTokenLockTime::get()
+			} else {
+				<timestamp::Pallet<T>>::get() + T::UndelegateTime::get()
+			};
+
 			let resolver_pending_fund = PendingFund::<T> {
 				owner: resolver_account.clone(),
 				amount: resolver.self_stake,
@@ -505,7 +521,8 @@ pub mod pallet {
 			T::IdentitiesManager::decrease_credibility(&resolver_account_id, amount)?;
 			let credibility = T::IdentitiesManager::get_credibility(&resolver_account_id)?;
 			if credibility < T::RequiredCredibility::get() {
-				Self::_terminate_resolver(resolver_account_id)?;
+				Self::_terminate_resolver(resolver_account_id.clone(), true)?;
+				<BlacklistedAccounts<T>>::mutate(|blacklisted_accounts| blacklisted_accounts.push(resolver_account_id));
 			}
 			Ok(())
 		}
