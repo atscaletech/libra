@@ -283,7 +283,7 @@ pub mod pallet {
 			self_stake: BalanceOf<T>,
 		) -> DispatchResult {
 			// The blacklisted account cannot join the network.
-			ensure!(!<ActiveResolvers<T>>::get().contains(&sender), <Error<T>>::AccountIsBlacklisted);
+			ensure!(!(<BlacklistedAccounts<T>>::get().contains(&sender)), <Error<T>>::AccountIsBlacklisted);
 			// The identity is required to join resolver networks.
 			ensure!(T::IdentitiesManager::has_identity(&sender), <Error<T>>::IdentityRequired);
 			// The identity credibility must be higher than required level to join resolver

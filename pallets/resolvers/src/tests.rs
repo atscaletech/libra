@@ -7,7 +7,7 @@ use frame_system as system;
 use mock::{
 	last_event, Currencies, CurrencyId, Event, ExtBuilder, Identities, Origin,
 	RandomnessCollectiveFlip, ResolversNetwork, Runtime, System, Timestamp, ALICE, BOB, CHARLIE,
-	INITIAL_CREDIBILITY, UNDELEGATE_TIME,
+	INITIAL_CREDIBILITY, UNDELEGATE_TIME, PENALTY_TOKEN_LOCK_TIME
 };
 use orml_traits::MultiReservableCurrency;
 use pallet_identities::{IdentitiesManager, IdentityType};
@@ -406,5 +406,61 @@ fn get_random_resolver_works() {
 		.unwrap();
 
 		assert_ne!(resolver1, resolver2);
+	});
+}
+
+#[test]
+fn blacklist_resolver_if_credibility_to_low() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+
+		assert_ok!(ResolversNetwork::decrease_credibility(ALICE, 40));
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), 20);
+		assert!(ResolversNetwork::blacklisted_accounts().contains(&ALICE));
+
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.status, crate::ResolverStatus::Terminated);
+		assert_eq!(resolver.delegations.len(), 0);
+		assert_eq!(resolver.self_stake, 0);
+		assert_eq!(resolver.total_stake, 0);
+
+		let pending_funds = ResolversNetwork::pending_funds();
+		assert_eq!(pending_funds.len(), 1);
+		assert_eq!(pending_funds[0].owner, ALICE);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 1000);
+
+		// Test pending fund not release after undelegate time
+		run_to_block_number((UNDELEGATE_TIME / BLOCK_TIME).into());
+		let pending_funds = ResolversNetwork::pending_funds();
+		assert_eq!(pending_funds.len(), 1);
+		assert_eq!(pending_funds[0].owner, ALICE);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 1000);
+
+		// Test pending fund release after penalty lock time
+		run_to_block_number((PENALTY_TOKEN_LOCK_TIME / BLOCK_TIME).into());
+		let pending_funds = ResolversNetwork::pending_funds();
+		assert_eq!(pending_funds.len(), 0);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 0);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 0);
+
+		assert!(ResolversNetwork::blacklisted_accounts().contains(&ALICE));
+		// Alice is rejected to join the network because credibility too low.
+		assert_noop!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		), Error::<Runtime>::AccountIsBlacklisted);
 	});
 }

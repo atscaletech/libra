@@ -33,7 +33,7 @@ pub const EVALUATOR_BONDING: Balance = 1000;
 pub const INITIAL_CREDIBILITY: Credibility = 60;
 pub const MAX_CREDIBILITY: Credibility = 100;
 
-pub const PENALTY_TOKEN_LOCK_TIME: Moment = 172800;
+pub const PENALTY_TOKEN_LOCK_TIME: Moment = 1728000;
 pub const UNDELEGATE_TIME: Moment = 172800;
 pub const MINIMUM_SELF_STAKE: Balance = 100;
 pub const ACTIVATION_STAKE_AMOUNT: Balance = 1000;
