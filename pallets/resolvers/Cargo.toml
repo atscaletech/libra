@@ -26,6 +26,7 @@ frame-system = { default-features = false, git = "https://github.com/paritytech/
 sp-runtime = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 sp-io = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
 pallet-timestamp = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }
+pallet-identities = { path = "../identities", default-features = false }
 orml-traits = { path = "../../open-runtime-module-library/traits", default-features = false }
 primitives = { path = "../../primitives", default-features = false }
 

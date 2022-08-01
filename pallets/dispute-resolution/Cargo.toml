@@ -30,6 +30,7 @@ orml-traits = { path = "../../open-runtime-module-library/traits", default-featu
 primitives = { path = "../../primitives", default-features = false }
 pallet-lrp = { path = "../lrp", default-features = false }
 pallet-resolvers = { path = "../resolvers", default-features = false }
+pallet-identities = { path = "../identities", default-features = false }
 
 [dev-dependencies]
 sp-core = { default-features = false, git = "https://github.com/paritytech/substrate.git", branch = "polkadot-v0.9.16" }

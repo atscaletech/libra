@@ -1,19 +1,32 @@
 #![cfg(test)]
 
 use super::*;
-use frame_support::{assert_noop, assert_ok, traits::OffchainWorker};
+use crate::pallet::ResolversNetwork as ResolversNetworkT;
+use frame_support::{assert_noop, assert_ok, traits::Hooks};
+use frame_system as system;
 use mock::{
-	last_event, Currencies, CurrencyId, Event, ExtBuilder, Origin, ResolversNetwork, Runtime,
-	System, Timestamp, ALICE, BOB, CHARLIE, INITIAL_CREDIBILITY, UNDELEGATE_TIME,
+	last_event, Currencies, CurrencyId, Event, ExtBuilder, Identities, Origin,
+	RandomnessCollectiveFlip, ResolversNetwork, Runtime, System, Timestamp, ALICE, BOB, CHARLIE,
+	INITIAL_CREDIBILITY, UNDELEGATE_TIME, PENALTY_TOKEN_LOCK_TIME
 };
 use orml_traits::MultiReservableCurrency;
+use pallet_identities::{IdentitiesManager, IdentityType};
+use sp_runtime::traits::{Hash, Header};
 
 pub const INIT_TIMESTAMP: u64 = 1_000;
 pub const BLOCK_TIME: u64 = 6_000;
 
 fn run_to_block_number(block_number: u64) {
-	while System::block_number() < block_number {
-		System::set_block_number(System::block_number() + 1);
+	let mut parent_hash = System::parent_hash();
+
+	for i in System::block_number()..(System::block_number() + block_number + 1) {
+		System::reset_events();
+		System::initialize(&i, &parent_hash, &Default::default());
+		RandomnessCollectiveFlip::on_initialize(i);
+
+		let header = System::finalize();
+		parent_hash = header.hash();
+		System::set_block_number(*header.number());
 		Timestamp::set_timestamp((System::block_number() as u64 * BLOCK_TIME) + INIT_TIMESTAMP);
 		ResolversNetwork::offchain_worker(System::block_number());
 	}
@@ -23,6 +36,19 @@ fn run_to_block_number(block_number: u64) {
 fn join_resolvers_networks_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
+
+		assert_noop!(
+			ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 300),
+			Error::<Runtime>::IdentityRequired,
+		);
+
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+
 		assert_noop!(
 			ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 99),
 			Error::<Runtime>::NotMeetMinimumSelfStake
@@ -36,12 +62,14 @@ fn join_resolvers_networks_works() {
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 300));
 
 		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
-		assert_eq!(resolver.credibility, INITIAL_CREDIBILITY);
 		assert_eq!(resolver.status, crate::ResolverStatus::Candidacy);
 		assert_eq!(resolver.self_stake, 300);
 		assert_eq!(resolver.total_stake, 300);
 		assert_eq!(resolver.delegations, [].to_vec());
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 300);
+
+		let resolver_credibility = Identities::get_credibility(&ALICE).unwrap();
+		assert_eq!(resolver_credibility, INITIAL_CREDIBILITY);
 
 		assert_eq!(
 			last_event(),
@@ -54,6 +82,12 @@ fn join_resolvers_networks_works() {
 fn delegate_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 900));
 
 		// Test delegate amount tokens that exeed the balance.
@@ -116,6 +150,12 @@ fn undelegate_works() {
 			Error::<Runtime>::ResolverNotFound,
 		);
 
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 900));
 
 		// Test undelegate without any delegations.
@@ -168,6 +208,12 @@ fn release_funds_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);
 
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 500));
 		// Bob and Charlie delegate tokens.
 		assert_ok!(ResolversNetwork::delegate(Origin::signed(BOB), ALICE, 200));
@@ -211,6 +257,12 @@ fn resign_works() {
 		);
 
 		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
 		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(ALICE), "".into(), 500));
 		assert_ok!(ResolversNetwork::delegate(Origin::signed(BOB), ALICE, 200));
 		assert_ok!(ResolversNetwork::delegate(Origin::signed(CHARLIE), ALICE, 200));
@@ -240,5 +292,175 @@ fn resign_works() {
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 0);
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &BOB), 0);
 		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &CHARLIE), 0);
+	});
+}
+
+#[test]
+fn test_increase_resolver_credibility_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+		// Create a active resolver.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.status, crate::ResolverStatus::Active);
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY);
+
+		// Test reduce a resolver credibility.
+		assert_ok!(ResolversNetwork::increase_credibility(&ALICE, 10));
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY + 10);
+	});
+}
+
+#[test]
+fn test_reduce_resolver_credibility_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+
+		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.status, crate::ResolverStatus::Active);
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY);
+		assert_ok!(ResolversNetwork::decrease_credibility(ALICE, 10));
+
+		// Test reduce a resolver credibility.
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), INITIAL_CREDIBILITY - 10);
+
+		// Test a resolver will be terminated if credibility under MinimumCredibility
+		assert_ok!(ResolversNetwork::decrease_credibility(ALICE, 30));
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), 20);
+		assert_eq!(resolver.status, crate::ResolverStatus::Terminated)
+	});
+}
+
+#[test]
+fn get_random_resolver_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(BOB),
+			"BOB".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(Origin::signed(BOB), "".into(), 1000));
+		assert_ok!(Identities::create_identity(
+			Origin::signed(CHARLIE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(CHARLIE),
+			"".into(),
+			1000
+		));
+
+		run_to_block_number(32);
+
+		let resolver1 = ResolversNetwork::get_resolver(
+			<Runtime as system::Config>::Hashing::hash_of(&"payment1".as_bytes()),
+			[].into(),
+		)
+		.unwrap();
+
+		let resolver2 = ResolversNetwork::get_resolver(
+			<Runtime as system::Config>::Hashing::hash_of(&"payment2".as_bytes()),
+			[].into(),
+		)
+		.unwrap();
+
+		assert_ne!(resolver1, resolver2);
+	});
+}
+
+#[test]
+fn blacklist_resolver_if_credibility_to_low() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+		// Test a resolver resign.
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[].into(),
+		));
+		assert_ok!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		));
+
+		assert_ok!(ResolversNetwork::decrease_credibility(ALICE, 40));
+		assert_eq!(Identities::get_credibility(&ALICE).unwrap(), 20);
+		assert!(ResolversNetwork::blacklisted_accounts().contains(&ALICE));
+
+		let resolver = ResolversNetwork::resolvers(ALICE).unwrap();
+		assert_eq!(resolver.status, crate::ResolverStatus::Terminated);
+		assert_eq!(resolver.delegations.len(), 0);
+		assert_eq!(resolver.self_stake, 0);
+		assert_eq!(resolver.total_stake, 0);
+
+		let pending_funds = ResolversNetwork::pending_funds();
+		assert_eq!(pending_funds.len(), 1);
+		assert_eq!(pending_funds[0].owner, ALICE);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 1000);
+
+		// Test pending fund not release after undelegate time
+		run_to_block_number((UNDELEGATE_TIME / BLOCK_TIME).into());
+		let pending_funds = ResolversNetwork::pending_funds();
+		assert_eq!(pending_funds.len(), 1);
+		assert_eq!(pending_funds[0].owner, ALICE);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 1000);
+
+		// Test pending fund release after penalty lock time
+		run_to_block_number((PENALTY_TOKEN_LOCK_TIME / BLOCK_TIME).into());
+		let pending_funds = ResolversNetwork::pending_funds();
+		assert_eq!(pending_funds.len(), 0);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 0);
+		assert_eq!(Currencies::reserved_balance(CurrencyId::Native, &ALICE), 0);
+
+		assert!(ResolversNetwork::blacklisted_accounts().contains(&ALICE));
+		// Alice is rejected to join the network because credibility too low.
+		assert_noop!(ResolversNetwork::join_resolvers_network(
+			Origin::signed(ALICE),
+			"".into(),
+			1000
+		), Error::<Runtime>::AccountIsBlacklisted);
 	});
 }

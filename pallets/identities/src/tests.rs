@@ -169,6 +169,48 @@ fn update_identity_works() {
 }
 
 #[test]
+fn update_identity_data_works() {
+	ExtBuilder::default().build().execute_with(|| {
+		System::set_block_number(1);
+
+		// Test update identity name
+		assert_ok!(Identities::create_identity(
+			Origin::signed(ALICE),
+			"Alice".into(),
+			IdentityType::Individual,
+			[
+				IdentityFieldInput {
+					name: "email".into(),
+					value: "foo@atscale.xyz".into(),
+					verify_method: VerifyMethod::Email
+				},
+			].into(),
+		));
+
+		// Test add update identity data
+		assert_ok!(Identities::update_identity_data(
+			Origin::signed(ALICE),
+			0,
+			IdentityFieldInput {
+				name: "email".into(),
+				value: "hello@atscale.xyz".into(),
+				verify_method: VerifyMethod::Email
+			},
+		));
+
+		let identity = Identities::identities(&ALICE).unwrap();
+		assert_eq!(identity.data.len(), 1);
+		assert_eq!(identity.data[0].name, "email".as_bytes());
+		assert_eq!(identity.data[0].value, "hello@atscale.xyz".as_bytes());
+
+		assert_eq!(
+			last_event(),
+			Event::Identities(crate::Event::IdentityUpdated { account_id: ALICE })
+		);
+	});
+}
+
+#[test]
 fn add_identity_data_works() {
 	ExtBuilder::default().build().execute_with(|| {
 		System::set_block_number(1);

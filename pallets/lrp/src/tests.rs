@@ -5,7 +5,7 @@ use frame_support::{assert_noop, assert_ok, traits::{ OffchainWorker }};
 use frame_system as system;
 use mock::{
 	last_event, Currencies, CurrencyId, Event, ExtBuilder, Origin, Runtime, System, ALICE, BOB,
-	CHARLIE, LRP, Timestamp, PENDING_PAYMENT_WAITING_TIME, FULL_FILLED_WAITING_TIME,
+	CHARLIE, LRP, Timestamp, PENDING_PAYMENT_WAITING_TIME, FULFILLED_WAITING_TIME,
 };
 use orml_traits::{MultiCurrency, MultiReservableCurrency};
 use sp_runtime::traits::Hash;
@@ -283,14 +283,14 @@ fn full_fill_payment_works() {
 		assert_ok!(LRP::accept_payment(Origin::signed(BOB), payment_hash));
 
 		assert_noop!(
-			LRP::full_fill_payment(Origin::signed(CHARLIE), payment_hash),
+			LRP::fulfill_payment(Origin::signed(CHARLIE), payment_hash),
 			Error::<Runtime>::AccessDenied
 		);
 
-		assert_ok!(LRP::full_fill_payment(Origin::signed(BOB), payment_hash));
+		assert_ok!(LRP::fulfill_payment(Origin::signed(BOB), payment_hash));
 		assert_eq!(
 			last_event(),
-			Event::LRP(crate::Event::PaymentFullFilled {
+			Event::LRP(crate::Event::PaymentFulfilled {
 				payment_hash,
 				payer: ALICE,
 				payee: BOB,
@@ -300,7 +300,7 @@ fn full_fill_payment_works() {
 		);
 
 		let payment = LRP::payments(payment_hash).unwrap();
-		assert_eq!(payment.status, crate::PaymentStatus::FullFilled);
+		assert_eq!(payment.status, crate::PaymentStatus::Fulfilled);
 	});
 }
 
@@ -320,7 +320,7 @@ fn complete_payment_works() {
 		let payment_hash = LRP::payments_owned(&ALICE)[0];
 
 		assert_ok!(LRP::accept_payment(Origin::signed(BOB), payment_hash));
-		assert_ok!(LRP::full_fill_payment(Origin::signed(BOB), payment_hash));
+		assert_ok!(LRP::fulfill_payment(Origin::signed(BOB), payment_hash));
 
 		assert_noop!(
 			LRP::complete_payment(Origin::signed(CHARLIE), payment_hash),
@@ -365,9 +365,9 @@ fn auto_complete_payment_by_offchain_worker_works() {
 		let payment_hash = LRP::payments_owned(&ALICE)[0];
 	
 		assert_ok!(LRP::accept_payment(Origin::signed(BOB), payment_hash));
-		assert_ok!(LRP::full_fill_payment(Origin::signed(BOB), payment_hash));
+		assert_ok!(LRP::fulfill_payment(Origin::signed(BOB), payment_hash));
 
-		run_to_block_number((FULL_FILLED_WAITING_TIME / BLOCK_TIME).into());
+		run_to_block_number((FULFILLED_WAITING_TIME / BLOCK_TIME).into());
 
 		let payment_hash = LRP::payments_owned(&ALICE)[0];
 		let payment = LRP::payments(payment_hash).unwrap();

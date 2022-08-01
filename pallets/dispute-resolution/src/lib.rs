@@ -1,25 +1,25 @@
 //! # Dispute Resolution
+//! - [`Config`]
+//! - [`Call`]
+//! - [`Event`]
+//! - [`Error`]
 //!
+//! #Overview
 //! Dispute resolution is on-chain dispute resolving process to help resolve conflicts between
 //! payment parties.
 //!
-//! ## Usage
+//! # Usage
 //!
+//! ## For payer or payee
 //! - `create_dispute` - Create an on-chain dispute to request refund. If the payee does not fight
 //!   against the dispute, the refund will be execute after `DisputeFinalizingTime`.
 //! - `fight_dispute` - Payee can fight against a dispute if make sure that invalid.
-//! - `escalate_dispute` - If a party does not satisfied with the dispute result, they can escalate
-//!   the dispute to more resolvers. Although there is no limit the escalate time, but the fee will
+//! - `escalate_dispute` - If a party is unsatisfied with the dispute result, they can escalate the
+//!   dispute to more resolvers. Although there is no limit the escalate time, but the fee will
 //!   increase follow the number of resolvers that involved to dispute case.
-//! - propose_outcome - Selected resolvers make judgment after evaluation the argument.
-//!
-//! ## Events
-//!
-//! - DisputeCreated - A `payer` issue a dispute for a payment.
-//! - DisputeFought - A `payee` fight against a dispute case.
-//! - DisputeEscalated - `payer` or `payee` escalate a dispute to more resolvers.
-//! - DisputeFinalized - A dispute is finalized after `DisputeFinalizingTime`. Once the dispute is
-//!   resolved, there is no way to recover.
+//! ## For selected resolvers
+//! - `propose_outcome` - Propose the judgment after carefully evaluate the arguments and evidence
+//!   from both sides.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -42,10 +42,11 @@ pub mod pallet {
 	};
 	use frame_system::pallet_prelude::*;
 	use orml_traits::{MultiCurrency, MultiReservableCurrency};
+	use pallet_identities::IdentitiesManager;
 	use pallet_lrp::PaymentProtocol;
 	use pallet_resolvers::ResolversNetwork;
 	use pallet_timestamp::{self as timestamp};
-	use primitives::CurrencyId;
+	use primitives::{Credibility, CurrencyId};
 	use scale_info::TypeInfo;
 	use sp_io::offchain_index;
 	use sp_runtime::{RuntimeDebug, SaturatedConversion};
@@ -59,10 +60,22 @@ pub mod pallet {
 		type Currency: MultiReservableCurrency<Self::AccountId, CurrencyId = CurrencyId<Self::Hash>>;
 		type PaymentProtocol: PaymentProtocol<Self::Hash, Self::AccountId, BalanceOf<Self>>;
 		type ResolversNetwork: ResolversNetwork<Self::AccountId, Self::Hash>;
+		type IdentitiesManager: IdentitiesManager<Self::AccountId>;
+		/// The finalizing dispute will be finalized after `DisputeFinalizingTime`. No more actions
+		/// can take with the payment after that.
 		#[pallet::constant]
 		type DisputeFinalizingTime: Get<MomentOf<Self>>;
+		/// Fee need to pay for each selected resolver
 		#[pallet::constant]
 		type DisputeFee: Get<BalanceOf<Self>>;
+		/// The amount credibility payer, payee or resolver (who win the dispute) gain after a
+		/// dispute is resolved
+		#[pallet::constant]
+		type CredibilityGain: Get<Credibility>;
+		/// The amount credibility payer, payee or resolver (who lose the dispute) loss after a
+		/// dispute is resolved
+		#[pallet::constant]
+		type CredibilityLoss: Get<Credibility>;
 	}
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
@@ -132,21 +145,13 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		DisputeCreated {
-			payer: AccountOf<T>,
-			payee: AccountOf<T>,
-			payment_hash: HashOf<T>,
-		},
-		DisputeFought {
-			payer: AccountOf<T>,
-			payee: AccountOf<T>,
-			payment_hash: HashOf<T>,
-		},
-		DisputeEscalated {
-			payer: AccountOf<T>,
-			payee: AccountOf<T>,
-			payment_hash: HashOf<T>,
-		},
+		/// A dispute is issued by payer
+		DisputeCreated { payer: AccountOf<T>, payee: AccountOf<T>, payment_hash: HashOf<T> },
+		/// A dispute is fought by payer or payee to against the outcome
+		DisputeFought { payer: AccountOf<T>, payee: AccountOf<T>, payment_hash: HashOf<T> },
+		/// A party unsatisfied with the outcome of resolver(s) and open to escalate dispute
+		DisputeEscalated { payer: AccountOf<T>, payee: AccountOf<T>, payment_hash: HashOf<T> },
+		/// A dispute is finalized with the outcome after finalizing time
 		DisputeResolved {
 			payment_hash: HashOf<T>,
 			payer: AccountOf<T>,
@@ -158,10 +163,15 @@ pub mod pallet {
 
 	#[pallet::error]
 	pub enum Error<T> {
+		/// The origin does not have appropriate access rights
 		AccessDenied,
+		/// The state of the payment is not allow to dispute
 		DisputeNotAccepted,
+		/// Their is no dispute related with the payment hash
 		DisputeNotFound,
+		/// Only finalizing dispute can be fight or escalate
 		ActionForOnlyFinalizingDispute,
+		/// The balance is not enough to pay the fee
 		InsufficientBalance,
 	}
 
@@ -244,7 +254,7 @@ pub mod pallet {
 			ensure!(issuer == payer, <Error<T>>::AccessDenied);
 
 			let fee = Self::_compute_dispute_fee(1);
-			Self::_lock_resolvers_fee(&issuer, fee.clone())?;
+			Self::_lock_resolvers_fee(&issuer, fee)?;
 
 			let expired_at = <timestamp::Pallet<T>>::get() + T::DisputeFinalizingTime::get();
 
@@ -298,13 +308,11 @@ pub mod pallet {
 			// The number of resolvers will increases after each escalating round.
 			let number_of_resolver = dispute.resolvers.len() + 1;
 
-			Self::_lock_resolvers_fee(&who, dispute.fee.clone())?;
+			Self::_lock_resolvers_fee(&who, dispute.fee)?;
 
 			for _i in 0..number_of_resolver {
-				let resolver = T::ResolversNetwork::get_resolver(
-					payment_hash.clone(),
-					dispute.resolvers.clone(),
-				)?;
+				let resolver =
+					T::ResolversNetwork::get_resolver(payment_hash, dispute.resolvers.clone())?;
 				dispute.resolvers.push(resolver);
 			}
 
@@ -327,7 +335,7 @@ pub mod pallet {
 			);
 
 			let fee = Self::_compute_dispute_fee(dispute.resolvers.len() + 1);
-			Self::_lock_resolvers_fee(&who, fee.clone())?;
+			Self::_lock_resolvers_fee(&who, fee)?;
 			dispute.fee += fee;
 
 			if who == payer {
@@ -348,7 +356,7 @@ pub mod pallet {
 		fn _propose_outcome(
 			who: AccountOf<T>,
 			payment_hash: HashOf<T>,
-			judment: Judgment,
+			judgment: Judgment,
 		) -> DispatchResult {
 			let mut dispute = Self::disputes(&payment_hash).ok_or(<Error<T>>::DisputeNotFound)?;
 
@@ -357,9 +365,9 @@ pub mod pallet {
 			// Ensure selected resolver can give decision once.
 			ensure!(!dispute.judgments.iter().any(|i| i.0 == who), <Error<T>>::AccessDenied);
 
-			dispute.judgments.push((who, judment));
+			dispute.judgments.push((who, judgment));
 
-			// The dispute will be concluded if get enough judgements from resolvers.
+			// The dispute will be concluded if get enough judgments from resolvers.
 			if dispute.resolvers.len() == dispute.judgments.len() {
 				let mut transcript = Transcript { release_to_payer: 0, release_to_payee: 0 };
 
@@ -391,7 +399,7 @@ pub mod pallet {
 
 		fn _lock_resolvers_fee(requestor: &AccountOf<T>, fee: BalanceOf<T>) -> DispatchResult {
 			ensure!(
-				T::Currency::free_balance(CurrencyId::Native, &requestor) >= fee,
+				T::Currency::free_balance(CurrencyId::Native, requestor) >= fee,
 				<Error<T>>::InsufficientBalance,
 			);
 			T::Currency::reserve(CurrencyId::Native, requestor, fee)?;
@@ -435,40 +443,83 @@ pub mod pallet {
 			for hash in hashes.iter() {
 				let mut dispute = Self::disputes(&hash).ok_or(<Error<T>>::DisputeNotFound)?;
 				let now = <timestamp::Pallet<T>>::get();
-				let (payer, payee, amount, currency_id) = T::PaymentProtocol::get_payment(&hash)?;
+				let (payer, payee, amount, currency_id) = T::PaymentProtocol::get_payment(hash)?;
 
 				// If dispute is out of finalizing time, finalize it as the outcome.
 				if now >= dispute.expired_at {
 					match dispute.outcome {
 						Judgment::ReleaseFundToPayee => {
-							T::Currency::unreserve(currency_id.clone(), &payer, amount.clone());
-							T::Currency::transfer(
-								currency_id.clone(),
-								&payer,
-								&payee,
-								amount.clone(),
-							)?;
-							Self::_release_resolvers_fee(&payee, dispute.fee.clone());
+							T::Currency::unreserve(currency_id, &payer, amount);
+							T::Currency::transfer(currency_id, &payer, &payee, amount)?;
+							Self::_release_resolvers_fee(&payee, dispute.fee);
 							Self::_distribute_resolvers_fee(&payer, dispute.resolvers.clone())?;
+
+							if T::IdentitiesManager::has_identity(&payee) {
+								T::IdentitiesManager::increase_credibility(
+									&payee,
+									T::CredibilityGain::get(),
+								)?;
+							}
+
+							if T::IdentitiesManager::has_identity(&payer) {
+								T::IdentitiesManager::decrease_credibility(
+									&payer,
+									T::CredibilityLoss::get(),
+								)?;
+							}
 						},
 						Judgment::ReleaseFundToPayer => {
-							T::Currency::unreserve(currency_id.clone(), &payer, amount.clone());
-							Self::_release_resolvers_fee(&payer, dispute.fee.clone());
+							T::Currency::unreserve(currency_id, &payer, amount);
+							Self::_release_resolvers_fee(&payer, dispute.fee);
 							Self::_distribute_resolvers_fee(&payee, dispute.resolvers.clone())?;
+
+							// Only decrease credibility of payee and increase credibility if the
+							// payee fight dispute and lose.
+							if !dispute.resolvers.is_empty() {
+								if T::IdentitiesManager::has_identity(&payee) {
+									T::IdentitiesManager::decrease_credibility(
+										&payee,
+										T::CredibilityLoss::get(),
+									)?;
+								}
+								if T::IdentitiesManager::has_identity(&payer) {
+									T::IdentitiesManager::increase_credibility(
+										&payer,
+										T::CredibilityGain::get(),
+									)?;
+								}
+							}
 						},
 					}
+
+					for (resolver, judgment) in dispute.judgments.clone() {
+						// Increase credibility for the resolver who make the correct judgment.
+						if judgment == dispute.outcome {
+							T::ResolversNetwork::increase_credibility(
+								&resolver,
+								T::CredibilityGain::get(),
+							)?;
+						} else {
+							// Decrease credibility for the resolver who make the correct judgment.
+							T::ResolversNetwork::decrease_credibility(
+								resolver.clone(),
+								T::CredibilityLoss::get(),
+							)?;
+						}
+					}
+
 					dispute.status = DisputeStatus::Resolved;
 
 					<Disputes<T>>::insert(&hash, dispute);
 					Self::deposit_event(Event::DisputeResolved {
-						payment_hash: hash.clone(),
+						payment_hash: *hash,
 						payer,
 						payee,
 						currency_id,
 						amount,
 					});
 
-					resolved_disputes.push(hash.clone());
+					resolved_disputes.push(*hash);
 				} else {
 					// The queue is sorted by time. If a dispute is in the waiting time, the rest of
 					// the queue after the dispute is still in the waiting time.
