@@ -1,6 +1,15 @@
+<h1 align="center">
+   <b>
+     <a href="https://thelibra.org"><img height="80" src="https://user-images.githubusercontent.com/92568442/183552059-89827da4-16f7-4803-aa29-b600597cf3d0.svg"/></a>
+     <br>
+    </b>
+</h1>
+
+<h3 align="center">Decentralized Payments System that empowers the next e-commerce.</h3>
+
 <p align="center">
-  <img width="800" align="center" src="https://user-images.githubusercontent.com/92568442/183552059-89827da4-16f7-4803-aa29-b600597cf3d0.svg"/>
-  <img width="600" align="center" src="https://raw.githubusercontent.com/w3f/Grants-Program/master/src/badge_black.svg"/>
+    <a href="https://golibra.xyz"><b>Website</b></a> •
+    <a href="https://docs.golibra.xyz"><b>Documentation</b></a>
 </p>
 
 ## Overview
